@@ -1,0 +1,12 @@
+bin/
+obj/
+artifacts/
+.vs/
+*.user
+*.suo
+# Secrets and local configuration: never commit
+src/SloomyTweaks.App/licensing.json
+**/secrets/
+**/data/*.db*
+*.pem
+!**/*.example.*

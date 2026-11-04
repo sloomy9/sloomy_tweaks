@@ -1,0 +1,58 @@
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build (including the WPF app)
+        run: dotnet build SloomyTweaks.sln -c Release
+
+      - name: Test
+        run: dotnet run --project tests/SloomyTweaks.Tests -c Release --no-build
+
+      - name: Publish app (unsigned, self-contained)
+        run: >
+          dotnet publish src/SloomyTweaks.App -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none
+          -o artifacts/SloomyTweaks-win-x64
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer (unsigned)
+        run: >
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          "/DSourceDir=$((Resolve-Path artifacts/SloomyTweaks-win-x64).Path)"
+          installer/SloomyTweaks.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SloomyTweaks-installer-unsigned
+          path: artifacts/installer/*.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SloomyTweaks-app-unsigned
+          path: artifacts/SloomyTweaks-win-x64
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: sudo apt-get install -y libsqlite3-0
+      - run: dotnet build SloomyTweaks.CrossPlatform.slnf -c Release
+      - run: dotnet run --project tests/SloomyTweaks.Tests -c Release --no-build

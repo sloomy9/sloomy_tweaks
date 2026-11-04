@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- UI-framework-agnostic MVVM layer: compiles and is unit-tested on any OS. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SloomyTweaks.Presentation</RootNamespace>
+    <Description>Sloomy Tweaks view models (MVVM).</Description>
+    <!-- Binding targets must be instance members; UI text intentionally uses the user's culture. -->
+    <NoWarn>$(NoWarn);CA1822;CA1305;CA1826;CA1869</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SloomyTweaks.Core\SloomyTweaks.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SloomyTweaks.Tests" />
+  </ItemGroup>
+</Project>

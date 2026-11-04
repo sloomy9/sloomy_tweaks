@@ -1,0 +1,9 @@
+{
+  "serverUrl": "https://licenses.example.com/",
+  "keys": [
+    {
+      "kid": "k1",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nPASTE THE CONTENTS OF public-key.pem HERE (PUBLIC key only — never the private key)\n-----END PUBLIC KEY-----"
+    }
+  ]
+}

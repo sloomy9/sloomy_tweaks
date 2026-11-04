@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    WPF desktop shell. Requires Windows to build (the WindowsDesktop targeting pack ships with the
+    .NET SDK on Windows). All logic lives in the referenced, cross-platform projects; this project
+    contains only XAML views, styles and Windows host services.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>SloomyTweaks.App</RootNamespace>
+    <AssemblyName>SloomyTweaks</AssemblyName>
+    <AssemblyTitle>Sloomy Tweaks</AssemblyTitle>
+    <Description>Sloomy Tweaks — evidence-based Windows gaming optimization.</Description>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\SloomyTweaks.ico</ApplicationIcon>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <NoWarn>$(NoWarn);CA1822;CA1305</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SloomyTweaks.Core\SloomyTweaks.Core.csproj" />
+    <ProjectReference Include="..\SloomyTweaks.Data\SloomyTweaks.Data.csproj" />
+    <ProjectReference Include="..\SloomyTweaks.Platform.Windows\SloomyTweaks.Platform.Windows.csproj" />
+    <ProjectReference Include="..\SloomyTweaks.Presentation\SloomyTweaks.Presentation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\SloomyTweaks.png" />
+    <None Update="licensing.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('licensing.json')" />
+  </ItemGroup>
+</Project>

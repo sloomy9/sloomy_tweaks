@@ -1,0 +1,14 @@
+{
+  "solution": {
+    "path": "SloomyTweaks.sln",
+    "projects": [
+      "src\\SloomyTweaks.Licensing.Contracts\\SloomyTweaks.Licensing.Contracts.csproj",
+      "src\\SloomyTweaks.Core\\SloomyTweaks.Core.csproj",
+      "src\\SloomyTweaks.Data\\SloomyTweaks.Data.csproj",
+      "src\\SloomyTweaks.Platform.Windows\\SloomyTweaks.Platform.Windows.csproj",
+      "src\\SloomyTweaks.Presentation\\SloomyTweaks.Presentation.csproj",
+      "src\\SloomyTweaks.LicenseServer\\SloomyTweaks.LicenseServer.csproj",
+      "tests\\SloomyTweaks.Tests\\SloomyTweaks.Tests.csproj"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SloomyTweaks.Licensing</RootNamespace>
+    <Description>Sloomy Tweaks license token format and wire contracts shared by the client and the license server.</Description>
+  </PropertyGroup>
+</Project>

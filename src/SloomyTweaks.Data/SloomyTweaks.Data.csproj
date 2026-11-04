@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SloomyTweaks.Data</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Sloomy Tweaks local persistence. Uses the SQLite engine that ships with Windows (winsqlite3.dll) so no native binaries are bundled; uses the system libsqlite3 on Linux (license server, CI).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SloomyTweaks.Core\SloomyTweaks.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,169 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="clr-namespace:SloomyTweaks.Presentation.ViewModels;assembly=SloomyTweaks.Presentation"
+                    xmlns:conv="clr-namespace:SloomyTweaks.App.Converters">
+
+    <!-- The theme is merged here so every view resource resolves its brushes and styles
+         independently of the order in which WPF loads merged dictionaries. -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/SloomyTweaks;component/Themes/Theme.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+    <conv:HasValueToVisibilityConverter x:Key="HasValueToVis" />
+    <conv:EvidenceToBrushConverter x:Key="EvidenceBrush" />
+    <conv:StateToBrushConverter x:Key="StateBrush" />
+    <conv:VerdictToBrushConverter x:Key="VerdictBrush" />
+    <conv:ErrorToBrushConverter x:Key="ErrorBrush" />
+    <conv:BytesToReadableConverter x:Key="Bytes" />
+    <conv:BitsPerSecondConverter x:Key="Bps" />
+    <conv:NullableNumberConverter x:Key="Num" />
+    <conv:JoinLinesConverter x:Key="Join" />
+
+    <!-- Bullet list of strings -->
+    <DataTemplate x:Key="BulletItem">
+        <Grid Margin="0,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="•" Foreground="{StaticResource Accent2}" />
+            <TextBlock Grid.Column="1" Text="{Binding}" Style="{StaticResource Text.Body}" />
+        </Grid>
+    </DataTemplate>
+
+    <!-- Label/value row used by info panels -->
+    <DataTemplate DataType="{x:Type vm:InfoRow}">
+        <Grid Margin="0,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{Binding Label}" Style="{StaticResource Text.Muted}" />
+            <TextBlock Grid.Column="1" Text="{Binding Value}" Style="{StaticResource Text.Body}" />
+        </Grid>
+    </DataTemplate>
+
+    <!-- ===================== Optimization card ===================== -->
+    <DataTemplate DataType="{x:Type vm:OptimizationCardViewModel}">
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <!-- Header -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,16,0">
+                        <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource Text.Primary}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Description}" Style="{StaticResource Text.Muted}" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding TechnicalMechanism}" Style="{StaticResource Text.Body}" Margin="0,8,0,0"
+                                   Visibility="{Binding IsNotOffered, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                        <Border Style="{StaticResource Badge}" BorderBrush="{Binding Evidence, Converter={StaticResource EvidenceBrush}}" Margin="0,0,8,0"
+                                ToolTip="Evidence level">
+                            <TextBlock Text="{Binding EvidenceText}" FontSize="12" Foreground="{Binding Evidence, Converter={StaticResource EvidenceBrush}}" />
+                        </Border>
+                        <Border Style="{StaticResource Badge}" BorderBrush="{Binding StateText, Converter={StaticResource StateBrush}}" ToolTip="Current state, read from Windows">
+                            <TextBlock Text="{Binding StateText}" FontSize="12" Foreground="{Binding StateText, Converter={StaticResource StateBrush}}" />
+                        </Border>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Meta -->
+                <WrapPanel Margin="0,12,0,0" Visibility="{Binding IsActionable, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Style="{StaticResource Text.Muted}" Margin="0,0,20,0">
+                        <Run Text="Restart required:" /> <Run Text="{Binding RestartRequiredText, Mode=OneWay}" Foreground="{StaticResource Text.Primary}" />
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource Text.Muted}" Margin="0,0,20,0">
+                        <Run Text="Administrator:" /> <Run Text="{Binding AdministratorText, Mode=OneWay}" Foreground="{StaticResource Text.Primary}" />
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource Text.Muted}" Text="Eligible for recommended flow" Foreground="{StaticResource Accent2}"
+                               Visibility="{Binding InRecommendedFlow, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Style="{StaticResource Text.Muted}" Text="Not in recommended flow (insufficient evidence)" Foreground="{StaticResource Warning}"
+                               Visibility="{Binding InRecommendedFlow, Converter={StaticResource BoolToVis}, ConverterParameter=invert}" />
+                </WrapPanel>
+
+                <!-- Compatibility findings -->
+                <Border Background="{StaticResource Warning.Subtle}" CornerRadius="8" Padding="12,10" Margin="0,12,0,0"
+                        Visibility="{Binding HasCompatibilityReasons, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl ItemsSource="{Binding CompatibilityReasons}" ItemTemplate="{StaticResource BulletItem}" />
+                </Border>
+
+                <!-- Actions -->
+                <Grid Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" Visibility="{Binding IsActionable, Converter={StaticResource BoolToVis}}">
+                        <Button Content="Apply" Style="{StaticResource Button.Primary}" Command="{Binding ApplyCommand}" Margin="0,0,8,0" MinWidth="96" />
+                        <Button Content="Restore" Style="{StaticResource Button.Secondary}" Command="{Binding RestoreCommand}" MinWidth="96"
+                                ToolTip="Restore the values saved before Sloomy Tweaks changed this setting" />
+                        <TextBlock Text="Working…" Style="{StaticResource Text.Muted}" VerticalAlignment="Center" Margin="12,0,0,0"
+                                   Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding ApplyBlockedReason}" Style="{StaticResource Text.Muted}" VerticalAlignment="Center" Margin="12,0"
+                               Visibility="{Binding ApplyBlockedReason, Converter={StaticResource HasValueToVis}}" />
+                    <Button Grid.Column="2" Style="{StaticResource Button.Link}" Command="{Binding ToggleDetailsCommand}" VerticalAlignment="Center">
+                        <Button.Content>
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="Show evidence and details" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                                <Setter Property="Text" Value="Hide details" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Button.Content>
+                    </Button>
+                </Grid>
+
+                <!-- Result of the last operation -->
+                <TextBlock Text="{Binding ResultMessage}" Style="{StaticResource Text.Body}" Margin="0,10,0,0"
+                           Foreground="{Binding ResultIsError, Converter={StaticResource ErrorBrush}}"
+                           Visibility="{Binding ResultMessage, Converter={StaticResource HasValueToVis}}" />
+
+                <!-- Details -->
+                <StackPanel Margin="0,16,0,0" Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
+                    <Border Height="1" Background="{StaticResource Border}" Margin="0,0,0,14" />
+                    <TextBlock Text="TECHNICAL MECHANISM" Style="{StaticResource Text.Label}" />
+                    <TextBlock Text="{Binding TechnicalMechanism}" Style="{StaticResource Text.Body}" Margin="0,0,0,12" />
+                    <TextBlock Text="EXPECTED BENEFIT" Style="{StaticResource Text.Label}" />
+                    <TextBlock Text="{Binding ExpectedBenefit}" Style="{StaticResource Text.Body}" Margin="0,0,0,12" />
+                    <TextBlock Text="EVIDENCE NOTES" Style="{StaticResource Text.Label}" />
+                    <TextBlock Text="{Binding EvidenceNotes}" Style="{StaticResource Text.Body}" Margin="0,0,0,12" />
+                    <TextBlock Text="COMPATIBILITY" Style="{StaticResource Text.Label}" />
+                    <TextBlock Text="{Binding CompatibilitySummary}" Style="{StaticResource Text.Body}" Margin="0,0,0,12" />
+                    <StackPanel Visibility="{Binding HasRisks, Converter={StaticResource BoolToVis}}" Margin="0,0,0,12">
+                        <TextBlock Text="RISKS" Style="{StaticResource Text.Label}" />
+                        <ItemsControl ItemsSource="{Binding Risks}" ItemTemplate="{StaticResource BulletItem}" />
+                    </StackPanel>
+                    <StackPanel Visibility="{Binding HasManualSteps, Converter={StaticResource BoolToVis}}" Margin="0,0,0,12">
+                        <TextBlock Text="HOW TO DO IT" Style="{StaticResource Text.Label}" />
+                        <ItemsControl ItemsSource="{Binding ManualSteps}" ItemTemplate="{StaticResource BulletItem}" />
+                    </StackPanel>
+                    <TextBlock Text="SOURCES" Style="{StaticResource Text.Label}" />
+                    <TextBlock Text="No authoritative source was found; see evidence notes." Style="{StaticResource Text.Muted}"
+                               Visibility="{Binding HasSources, Converter={StaticResource BoolToVis}, ConverterParameter=invert}" />
+                    <ItemsControl ItemsSource="{Binding Sources}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:SourceViewModel}">
+                                <StackPanel Margin="0,3">
+                                    <Button Content="{Binding Title}" Style="{StaticResource Button.Link}" Command="{Binding OpenCommand}" ToolTip="{Binding Url}" HorizontalAlignment="Left" />
+                                    <TextBlock Text="{Binding KindText}" FontSize="11" Foreground="{StaticResource Text.Secondary}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </DataTemplate>
+</ResourceDictionary>

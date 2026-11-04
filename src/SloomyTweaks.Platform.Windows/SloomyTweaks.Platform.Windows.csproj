@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Plain net8.0 so it builds on any OS; every public type is marked [SupportedOSPlatform("windows")]. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SloomyTweaks.Platform.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Sloomy Tweaks Windows integration using documented Win32 APIs (registry, power management, SystemParametersInfo, DPAPI, System Restore).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SloomyTweaks.Core\SloomyTweaks.Core.csproj" />
+  </ItemGroup>
+</Project>

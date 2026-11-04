@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SloomyTweaks.Core</RootNamespace>
+    <Description>Sloomy Tweaks domain model: optimization framework, evidence registry, safe workflow engine, benchmark analysis and licensing client.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SloomyTweaks.Licensing.Contracts\SloomyTweaks.Licensing.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SloomyTweaks.Tests" />
+  </ItemGroup>
+</Project>
