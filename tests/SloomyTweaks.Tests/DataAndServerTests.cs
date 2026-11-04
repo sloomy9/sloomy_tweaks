@@ -226,8 +226,16 @@ public sealed class LicenseServerIntegrationTests : IAsyncDisposable
         await StartAsync();
         CreatedLicense lic = await CreateLicenseAsync();
         await _app!.StopAsync();
-        byte[] db = File.ReadAllBytes(Path.Combine(_dir, "licenses.db"));
-        string all = Encoding.UTF8.GetString(db) + (File.Exists(Path.Combine(_dir, "licenses.db-wal")) ? Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(_dir, "licenses.db-wal"))) : "");
+        // The server keeps its SQLite connection until disposal; Windows needs shared read access to open the file meanwhile.
+        static string ReadShared(string path)
+        {
+            if (!File.Exists(path)) return "";
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var ms = new MemoryStream();
+            fs.CopyTo(ms);
+            return Encoding.UTF8.GetString(ms.ToArray());
+        }
+        string all = ReadShared(Path.Combine(_dir, "licenses.db")) + ReadShared(Path.Combine(_dir, "licenses.db-wal"));
         Assert.False(all.Contains(lic.LicenseKey, StringComparison.Ordinal));
         Assert.False(all.Contains(lic.LicenseKey.Replace("-", ""), StringComparison.Ordinal));
     }
