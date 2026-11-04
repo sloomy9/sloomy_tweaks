@@ -7,6 +7,7 @@
 | Level | What it means | What ran there |
 |---|---|---|
 | **Mock** | Automated tests against fake registry/power/mouse/accessibility/fsutil implementations | 95/95 tests pass (Linux, .NET 8.0 SDK): engine workflow, every toggle's apply → verify → restore → verify-restore, failed apply/rollback, permissions, Windows-build compatibility, selector, restart persistence with SQLite, licensing (tokens, server over real HTTP, config validation), view models (toggle, selector, gating, restore without license), parsers |
+| **Windows CI** | GitHub Actions `windows-latest` (Windows Server) | Full solution build including WPF, 95/95 tests, self-contained publish and unsigned Inno Setup installer — all green. No UI interaction and no system changes are made here |
 | **Wine** | The real compiled WPF app (win-x64) run under Wine 9 on Linux (Windows 11 build 22631 reported) | Activation screen; real activation against the dev license server; dashboard with real hardware detection; Input & USB, Windows, Power, Restore Center pages; **pointer-precision toggle applied through SystemParametersInfo, verified (MouseSpeed 1→0 in the registry), shown ON, restored from Restore Center (back to 1), history shown before/after**. PowrProf and NCrypt ECDSA do not exist in Wine: the app reported this honestly (power items "could not be read"); the QA harness `tools/SloomyTweaks.UiPreview` swaps in a managed ECDSA verifier only for this test |
 | **VM** | Windows 10/11 virtual machine | **Not run** |
 | **Real hardware** | Windows PC with real GPU/power plans | **Not run** |
