@@ -26,10 +26,15 @@ public sealed class ViewModelTests : IDisposable
     private readonly FakeClock _clock = new();
     private readonly string _tmp = Directory.CreateTempSubdirectory("sloomy-vm-").FullName;
 
-    private AppServices Services(bool licensed)
+    private readonly FakePower _power = new();
+    private readonly FakeAccessibility _a11y = new();
+    private readonly FakeFileSystem _fs = new() { DisableDeleteNotify = 1 };
+    private readonly FakeAppActions _app = new() { IsElevated = true };
+
+    private AppServices Services(bool licensed, bool developmentMode = false)
     {
-        var engine = new OptimizationEngine(OptimizationCatalog.Create(new FakeRegistry(), new FakePower(), _mouse),
-            () => TestSystems.Win11(), new FakePrivileges(true), _backups, _history, _clock, NullLogger.Instance);
+        var engine = new OptimizationEngine(TestCatalog.Create(new FakeRegistry(), _power, _mouse, _a11y, _fs),
+            () => TestSystems.Win11(), new FakePrivileges(_app.IsElevated), _backups, _history, _clock, NullLogger.Instance);
         var pub = ECDsa.Create();
         pub.ImportSubjectPublicKeyInfo(_signing.ExportSubjectPublicKeyInfo(), out _);
         var device = new FakeDevice();
@@ -42,10 +47,11 @@ public sealed class ViewModelTests : IDisposable
                 LicenseExpiresAtUnix = _clock.UtcNow.AddDays(30).ToUnixTimeSeconds(),
             }, _signing));
         }
-        var license = new LicenseService(new NoNetworkApi(), _tokens, device, new Dictionary<string, ECDsa> { ["k1"] = pub }, _clock, NullLogger.Instance, "0.1.0");
+        var license = new LicenseService(new NoNetworkApi(), _tokens, device, new Dictionary<string, ECDsa> { ["k1"] = pub }, _clock,
+            NullLogger.Instance, "0.2.0", developmentMode);
         license.InitializeAsync().GetAwaiter().GetResult();
         return new AppServices(engine, new FakeHardware(), new FakeUsage(), license, _history, _backups, _benchmarks,
-            new InMemorySettingsStore(), new FakeProcesses(), _dialogs, new FakeAppActions(), NullLogger.Instance);
+            new InMemorySettingsStore(), new FakeProcesses(), _dialogs, _app, NullLogger.Instance, new FakeDiagnostics());
     }
 
     private sealed class NoNetworkApi : ILicenseApi
@@ -56,93 +62,180 @@ public sealed class ViewModelTests : IDisposable
         public Task<LicenseApiResult> DeactivateAsync(TokenRequest r, CancellationToken ct) => Down();
     }
 
-    [Fact]
-    public async Task Card_apply_shows_explanation_applies_and_refreshes_state()
+    private async Task<OptimizationCardViewModel> Card(AppServices s, string id)
     {
-        AppServices s = Services(licensed: true);
-        var page = new CategoryPageViewModel("Input", "", s, o => o.Definition.Category == OptimizationCategory.InputUsb, () => s.License.Current.HasPremiumAccess);
+        var page = new CategoryPageViewModel("T", "", s, o => o.Id == id, () => s.License.Current.HasPremiumAccess);
         await page.OnNavigatedToAsync();
-        OptimizationCardViewModel card = page.Cards.Single(c => c.Id == Ids.PointerPrecision);
-        Assert.Equal("Disabled", card.StateText);
-        Assert.True(card.CanApply);
-
-        await card.ApplyAsync();
-
-        Assert.Contains("Changes:", _dialogs.Confirmations.Single());
-        Assert.Contains("SPI", _dialogs.Confirmations.Single() + card.TechnicalMechanism);
-        Assert.Equal("Enabled", card.StateText);
-        Assert.False(card.ResultIsError);
-        Assert.True(card.CanRestore);
-        Assert.Equal(0, _mouse.Value.Acceleration);
+        return page.Cards.Single();
     }
 
     [Fact]
-    public async Task Declining_the_confirmation_changes_nothing()
+    public async Task Toggle_turns_on_only_after_verification_and_off_restores_exactly()
     {
         AppServices s = Services(licensed: true);
-        _dialogs.ConfirmResult = false;
-        var page = new CategoryPageViewModel("Input", "", s, o => o.Id == Ids.PointerPrecision, () => true);
-        await page.OnNavigatedToAsync();
-        await page.Cards[0].ApplyAsync();
+        OptimizationCardViewModel card = await Card(s, Ids.PointerPrecision);
+        Assert.False(card.IsOn);
+        Assert.True(card.CanToggle);
+        Assert.Equal("Off", card.StatusText);
+
+        await card.ToggleAsync();
+        Assert.Empty(_dialogs.Confirmations); // documented, no restart: no confirmation needed
+        Assert.True(card.IsOn);
+        Assert.False(card.ResultIsError);
+        Assert.Equal(0, _mouse.Value.Acceleration);
+        Assert.NotNull(card.RestoreInfo);
+
+        await card.ToggleAsync();
+        Assert.False(card.IsOn);
         Assert.Equal(1, _mouse.Value.Acceleration);
+        Assert.Null(card.RestoreInfo);
+    }
+
+    [Fact]
+    public async Task Failed_apply_shows_an_error_and_the_toggle_stays_off()
+    {
+        AppServices s = Services(licensed: true);
+        _a11y.FailWrites = true;
+        OptimizationCardViewModel card = await Card(s, Ids.AccessibilityShortcuts);
+        await card.ToggleAsync();
+        Assert.False(card.IsOn);
+        Assert.True(card.ResultIsError);
+        Assert.True(_a11y.Value.AnyShortcutActive);
+    }
+
+    [Fact]
+    public async Task Experimental_toggle_asks_first_and_declining_changes_nothing()
+    {
+        _power.AcValues[FakePower.AcKey(_power.Active, OptimizationCatalog.UsbSubgroupGuid, OptimizationCatalog.UsbSelectiveSuspendGuid)] = 1;
+        AppServices s = Services(licensed: true);
+        _dialogs.ConfirmResult = false;
+        OptimizationCardViewModel card = await Card(s, Ids.UsbSelectiveSuspend);
+        await card.ToggleAsync();
+        Assert.Equal(1, _dialogs.Confirmations.Count);
+        Assert.False(card.IsOn);
         Assert.Empty(_history.List());
     }
 
     [Fact]
-    public async Task Without_license_apply_is_disabled_but_restore_remains_available()
+    public async Task Unsupported_toggle_is_disabled_off_and_explains_why()
+    {
+        AppServices s = Services(licensed: true); // USB setting absent on the fake plan
+        OptimizationCardViewModel card = await Card(s, Ids.UsbSelectiveSuspend);
+        Assert.True(card.IsUnsupported);
+        Assert.False(card.IsOn);
+        Assert.False(card.CanToggle);
+        Assert.Contains("USB selective suspend", card.ToggleBlockedReason);
+    }
+
+    [Fact]
+    public async Task Admin_toggle_is_blocked_for_standard_users()
+    {
+        _app.IsElevated = false;
+        AppServices s = Services(licensed: true);
+        OptimizationCardViewModel card = await Card(s, Ids.Trim);
+        Assert.False(card.CanToggle);
+        Assert.Contains("administrator", card.ToggleBlockedReason);
+        Assert.Equal(1, _fs.DisableDeleteNotify);
+    }
+
+    [Fact]
+    public async Task Already_on_by_default_is_shown_on_but_cannot_be_turned_off_without_a_backup()
+    {
+        AppServices s = Services(licensed: true);
+        OptimizationCardViewModel card = await Card(s, Ids.GameMode); // absent value = on (Windows default)
+        Assert.True(card.IsOn);
+        Assert.False(card.CanToggle);
+        Assert.Contains("Already on", card.ToggleBlockedReason);
+        Assert.Null(card.RestoreInfo); // no duplicate text
+    }
+
+    [Fact]
+    public async Task Selector_card_changes_the_plan_and_restores_the_original()
+    {
+        AppServices s = Services(licensed: true);
+        OptimizationCardViewModel card = await Card(s, Ids.PowerPlan);
+        Assert.True(card.IsSelector);
+        Assert.Equal("Balanced", card.SelectedOption!.Label);
+        Assert.False(card.CanRestoreOriginal);
+
+        await card.SelectAsync(card.Options.Single(o => o.Label == "High performance"));
+        Assert.Equal(1, _dialogs.Confirmations.Count); // X3D warning on the default test CPU
+        Assert.Equal(OptimizationCatalog.HighPerformanceSchemeGuid, _power.Active);
+        Assert.Equal("High performance", card.SelectedOption!.Label);
+        Assert.True(card.CanRestoreOriginal);
+
+        await card.RestoreOriginalCommand.ExecuteAsync();
+        Assert.Equal(OptimizationCatalog.BalancedSchemeGuid, _power.Active);
+    }
+
+    [Fact]
+    public async Task Without_a_license_only_activation_and_restore_are_reachable()
+    {
+        var main = new MainViewModel(Services(licensed: false), "device");
+        await main.InitializeAsync();
+        Assert.True(main.IsLocked);
+        Assert.False(main.IsUnlocked);
+        Assert.Null(main.CurrentPage);
+        Assert.Equal(15, main.NavItems.Count);
+
+        await main.NavigateAsync(main.NavItems.Single(n => n.Key == "benchmark"));
+        Assert.Null(main.CurrentPage);
+
+        await main.Activation.ShowRestoreCommand.ExecuteAsync();
+        Assert.True(main.Activation.ShowRestore);
+        main.StopLicenseRecheck();
+    }
+
+    [Fact]
+    public async Task Restore_still_works_after_the_license_expires()
     {
         AppServices licensed = Services(licensed: true);
-        var page = new CategoryPageViewModel("Input", "", licensed, o => o.Id == Ids.PointerPrecision, () => true);
-        await page.OnNavigatedToAsync();
-        await page.Cards[0].ApplyAsync();
+        await (await Card(licensed, Ids.PointerPrecision)).ToggleAsync();
+        Assert.Equal(0, _mouse.Value.Acceleration);
 
         _tokens.Clear();
-        AppServices unlicensed = Services(licensed: false);
-        Assert.False(unlicensed.License.Current.HasPremiumAccess);
-        var page2 = new CategoryPageViewModel("Input", "", unlicensed, o => o.Id == Ids.PointerPrecision, () => unlicensed.License.Current.HasPremiumAccess);
-        await page2.OnNavigatedToAsync();
-        OptimizationCardViewModel card = page2.Cards[0];
-        Assert.False(card.CanApply);
-        Assert.True(card.CanRestore);
-
-        var restore = new RestoreCenterViewModel(unlicensed);
-        await restore.OnNavigatedToAsync();
+        var main = new MainViewModel(Services(licensed: false), "device");
+        await main.InitializeAsync();
+        Assert.True(main.IsLocked);
+        await main.Activation.ShowRestoreCommand.ExecuteAsync();
+        RestoreCenterViewModel restore = main.Activation.RestoreCenter;
         Assert.Equal(1, restore.Items.Count);
         await restore.Items[0].RestoreCommand.ExecuteAsync();
         Assert.Equal(1, _mouse.Value.Acceleration);
         Assert.True(restore.IsEmpty);
+        main.StopLicenseRecheck();
     }
 
     [Fact]
-    public async Task Main_view_model_locks_premium_tools_and_shows_activation()
+    public async Task Licensed_user_gets_all_sections_and_development_mode_is_labelled()
     {
-        var main = new MainViewModel(Services(licensed: false), "device");
+        var main = new MainViewModel(Services(licensed: true, developmentMode: true), "device");
         await main.InitializeAsync();
-        Assert.True(main.ShowActivation);
-        Assert.Equal(16, main.NavItems.Count);
-        Assert.Equal("Dashboard", main.CurrentPage!.Title);
-
-        await main.NavigateAsync(main.NavItems.Single(n => n.Key == "benchmark"));
-        Assert.True(main.CurrentPage is LockedPageViewModel);
-
-        await main.NavigateAsync(main.NavItems.Single(n => n.Key == "restore"));
-        Assert.True(main.CurrentPage is RestoreCenterViewModel);
-    }
-
-    [Fact]
-    public async Task Licensed_user_reaches_benchmark_center_and_dashboard_counts_pending()
-    {
-        var main = new MainViewModel(Services(licensed: true), "device");
-        await main.InitializeAsync();
-        Assert.False(main.ShowActivation);
+        Assert.True(main.IsUnlocked);
+        Assert.Equal("DEVELOPMENT MODE", main.DevelopmentBadge);
         var dash = (DashboardViewModel)main.CurrentPage!;
         Assert.Equal("NVIDIA GeForce RTX 4070", dash.GpuName);
         Assert.Equal("Test Board Co. B650", dash.Motherboard);
-        Assert.True(dash.PendingCount >= 1);
         dash.OnNavigatedFrom();
 
+        foreach (NavItemViewModel item in main.NavItems)
+        {
+            await main.NavigateAsync(item);
+            Assert.NotNull(main.CurrentPage);
+            main.CurrentPage!.OnNavigatedFrom();
+        }
         await main.NavigateAsync(main.NavItems.Single(n => n.Key == "benchmark"));
         Assert.True(main.CurrentPage is BenchmarkViewModel);
+        main.StopLicenseRecheck();
+    }
+
+    [Fact]
+    public async Task Production_build_has_no_development_badge()
+    {
+        var main = new MainViewModel(Services(licensed: true), "device");
+        await main.InitializeAsync();
+        Assert.Null(main.DevelopmentBadge);
+        main.StopLicenseRecheck();
     }
 
     [Fact]

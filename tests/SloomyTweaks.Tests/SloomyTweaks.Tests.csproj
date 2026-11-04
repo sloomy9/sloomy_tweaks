@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\SloomyTweaks.Core\SloomyTweaks.Core.csproj" />
     <ProjectReference Include="..\..\src\SloomyTweaks.Data\SloomyTweaks.Data.csproj" />
     <ProjectReference Include="..\..\src\SloomyTweaks.Presentation\SloomyTweaks.Presentation.csproj" />
+    <ProjectReference Include="..\..\src\SloomyTweaks.Platform.Windows\SloomyTweaks.Platform.Windows.csproj" />
     <ProjectReference Include="..\..\src\SloomyTweaks.LicenseServer\SloomyTweaks.LicenseServer.csproj" />
   </ItemGroup>
 </Project>

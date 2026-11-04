@@ -3,7 +3,8 @@
                     xmlns:vm="clr-namespace:SloomyTweaks.Presentation.ViewModels;assembly=SloomyTweaks.Presentation"
                     xmlns:bench="clr-namespace:SloomyTweaks.Core.Benchmark;assembly=SloomyTweaks.Core"
                     xmlns:net="clr-namespace:SloomyTweaks.Core.Network;assembly=SloomyTweaks.Core"
-                    xmlns:proc="clr-namespace:SloomyTweaks.Core.Processes;assembly=SloomyTweaks.Core">
+                    xmlns:proc="clr-namespace:SloomyTweaks.Core.Processes;assembly=SloomyTweaks.Core"
+                    xmlns:ctl="clr-namespace:SloomyTweaks.App.Controls">
 
     <ResourceDictionary.MergedDictionaries>
         <ResourceDictionary Source="/SloomyTweaks;component/Views/Cards.xaml" />
@@ -24,22 +25,21 @@
     </DataTemplate>
 
     <!-- Small dashboard tile -->
-    <Style x:Key="Tile" TargetType="Border" BasedOn="{StaticResource Card}">
-        <Setter Property="Margin" Value="0,0,14,14" />
-        <Setter Property="MinHeight" Value="96" />
+    <Style x:Key="Tile" TargetType="Border" BasedOn="{StaticResource Card.Grid}">
+        <Setter Property="MinHeight" Value="104" />
     </Style>
 
     <!-- ===================== Dashboard ===================== -->
     <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="32,24,18,32">
+            <StackPanel Margin="32,28,32,32" MaxWidth="1240">
                 <Grid>
                     <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource PageHeader}" />
                     <Button Content="Refresh" Style="{StaticResource Button.Secondary}" Command="{Binding RefreshCommand}"
                             HorizontalAlignment="Right" VerticalAlignment="Top" />
                 </Grid>
 
-                <UniformGrid Columns="3">
+                <ctl:AdaptiveGrid MinColumnWidth="260" MaxColumns="3" Spacing="16" Margin="0,0,0,16">
                     <Border Style="{StaticResource Tile}">
                         <StackPanel>
                             <TextBlock Text="PROCESSOR" Style="{StaticResource Text.Label}" />
@@ -87,9 +87,9 @@
                             </TextBlock>
                         </StackPanel>
                     </Border>
-                </UniformGrid>
+                </ctl:AdaptiveGrid>
 
-                <Border Style="{StaticResource Card}" Margin="0,0,14,14">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -113,7 +113,7 @@
                     </Grid>
                 </Border>
 
-                <UniformGrid Columns="3">
+                <ctl:AdaptiveGrid MinColumnWidth="260" MaxColumns="3" Spacing="16" Margin="0,0,0,16">
                     <Border Style="{StaticResource Tile}">
                         <StackPanel>
                             <TextBlock Text="LICENSE" Style="{StaticResource Text.Label}" />
@@ -148,9 +148,9 @@
                             <TextBlock Text="Verified or Documented and compatible" Style="{StaticResource Text.Muted}" />
                         </StackPanel>
                     </Border>
-                </UniformGrid>
+                </ctl:AdaptiveGrid>
 
-                <Border Style="{StaticResource Card}" Margin="0,0,14,14">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock Text="LAST BENCHMARK" Style="{StaticResource Text.Label}" />
                         <TextBlock Text="{Binding LastBenchmark}" Style="{StaticResource Text.Body}" />
@@ -163,41 +163,69 @@
     <!-- ===================== Category page ===================== -->
     <DataTemplate DataType="{x:Type vm:CategoryPageViewModel}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="32,24,32,32" MaxWidth="1100" HorizontalAlignment="Stretch">
+            <StackPanel Margin="32,28,32,32" MaxWidth="1240">
                 <Grid>
                     <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource PageHeader}" />
-                    <Button Content="Re-check" Style="{StaticResource Button.Secondary}" Command="{Binding RefreshCommand}"
-                            HorizontalAlignment="Right" VerticalAlignment="Top" ToolTip="Read the current configuration from Windows again" />
+                    <Button Style="{StaticResource Button.Secondary}" Command="{Binding RefreshCommand}"
+                            HorizontalAlignment="Right" VerticalAlignment="Top" ToolTip="Read the current configuration from Windows again">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Re-check" />
+                        </StackPanel>
+                    </Button>
                 </Grid>
-                <Border Style="{StaticResource Card}" Visibility="{Binding HasInfo, Converter={StaticResource BoolToVis}}">
-                    <StackPanel>
-                        <TextBlock Text="Detected configuration" Style="{StaticResource Text.Section}" />
-                        <ItemsControl ItemsSource="{Binding InfoRows}" />
+
+                <!-- Diagnostics: information only, never changes the system -->
+                <ItemsControl ItemsSource="{Binding Sections}" ItemsPanel="{StaticResource InfoGridPanel}" Margin="0,0,0,16"
+                              Visibility="{Binding HasSections, Converter={StaticResource BoolToVis}}" />
+
+                <!-- Windows Settings shortcuts -->
+                <StackPanel Margin="0,0,0,12" Visibility="{Binding HasLinks, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="OPEN IN WINDOWS SETTINGS" Style="{StaticResource Text.Label}" Margin="0,0,0,8" />
+                    <ItemsControl ItemsSource="{Binding Links}" ItemsPanel="{StaticResource WrapPanelTemplate}" />
+                </StackPanel>
+
+                <!-- Optimizations -->
+                <TextBlock Text="Optimizations" Style="{StaticResource Text.Section}" Margin="0,4,0,12"
+                           Visibility="{Binding HasCards, Converter={StaticResource BoolToVis}}" />
+                <ItemsControl ItemsSource="{Binding Cards}" ItemsPanel="{StaticResource CardGridPanel}" />
+                <Border Style="{StaticResource Card}" Visibility="{Binding HasCards, Converter={StaticResource BoolToVis}, ConverterParameter=invert}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE946;" Style="{StaticResource Text.Icon}" Foreground="{StaticResource Text.Secondary}" Margin="0,0,12,0" />
+                        <TextBlock Text="{Binding EmptyMessage}" Style="{StaticResource Text.Muted}" />
                     </StackPanel>
                 </Border>
-                <ItemsControl ItemsSource="{Binding Cards}" />
-                <Border Style="{StaticResource Card}" Visibility="{Binding HasCards, Converter={StaticResource BoolToVis}, ConverterParameter=invert}">
-                    <TextBlock Text="{Binding EmptyMessage}" Style="{StaticResource Text.Muted}" />
+
+                <!-- Not offered, and why -->
+                <Border Style="{StaticResource Card}" Margin="0,16,0,0" Visibility="{Binding HasNotOffered, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock Text="Not offered by Sloomy Tweaks" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Text.Primary}" />
+                                <TextBlock Text="Popular tweaks that are unsupported, unsafe or without evidence, and why they are excluded."
+                                           Style="{StaticResource Text.Small}" Margin="0,2,0,0" />
+                            </StackPanel>
+                            <Button Style="{StaticResource Button.Link}" Command="{Binding ToggleNotOfferedCommand}" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock>
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="Show" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ShowNotOffered}" Value="True">
+                                                    <Setter Property="Text" Value="Hide" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Button>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding NotOffered}" Margin="0,8,0,0"
+                                      Visibility="{Binding ShowNotOffered, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
                 </Border>
             </StackPanel>
         </ScrollViewer>
-    </DataTemplate>
-
-    <!-- ===================== Locked page ===================== -->
-    <DataTemplate DataType="{x:Type vm:LockedPageViewModel}">
-        <Grid>
-            <Border Style="{StaticResource Card}" HorizontalAlignment="Center" VerticalAlignment="Center" Width="460" Padding="32">
-                <StackPanel HorizontalAlignment="Center">
-                    <TextBlock Text="&#xE72E;" Style="{StaticResource Text.Icon}" FontSize="32" Foreground="{StaticResource Accent}" HorizontalAlignment="Center" />
-                    <TextBlock Text="{Binding Title}" Style="{StaticResource Text.PageTitle}" FontSize="20" HorizontalAlignment="Center" Margin="0,14,0,6" />
-                    <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Text.Muted}" TextAlignment="Center" />
-                    <TextBlock Text="The Restore Center, history, dashboard and settings remain available without a license."
-                               Style="{StaticResource Text.Muted}" TextAlignment="Center" Margin="0,8,0,0" />
-                    <Button Content="Activate license" Style="{StaticResource Button.Primary}" Command="{Binding GoToLicenseCommand}"
-                            HorizontalAlignment="Center" Margin="0,20,0,0" />
-                </StackPanel>
-            </Border>
-        </Grid>
     </DataTemplate>
 
     <!-- ===================== Benchmark Center ===================== -->
@@ -508,70 +536,54 @@
         </ScrollViewer>
     </DataTemplate>
 
-    <!-- ===================== History ===================== -->
-    <DataTemplate DataType="{x:Type vm:HistoryViewModel}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="32,24,32,32" MaxWidth="1100">
+    <!-- History list (used inside Restore Center) -->
+    <DataTemplate DataType="{x:Type vm:HistoryItem}">
+        <Border BorderBrush="{StaticResource Border.Subtle}" BorderThickness="0,0,0,1" Padding="0,12">
+            <StackPanel>
                 <Grid>
-                    <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource PageHeader}" />
-                    <Button Content="Refresh" Style="{StaticResource Button.Secondary}" Command="{Binding RefreshCommand}" HorizontalAlignment="Right" VerticalAlignment="Top" />
+                    <TextBlock Style="{StaticResource Text.Body}" Margin="0,0,140,0">
+                        <Run Text="{Binding Optimization, Mode=OneWay}" FontWeight="SemiBold" />
+                        <Run Text="·" Foreground="{StaticResource Text.Secondary}" />
+                        <Run Text="{Binding Action, Mode=OneWay}" Foreground="{StaticResource Text.Secondary}" />
+                    </TextBlock>
+                    <TextBlock Text="{Binding When}" Style="{StaticResource Text.Small}" HorizontalAlignment="Right" />
                 </Grid>
-                <Border Style="{StaticResource Card}" Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="No operations recorded yet." Style="{StaticResource Text.Muted}" />
-                </Border>
-                <ItemsControl ItemsSource="{Binding Items}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:HistoryItem}">
-                            <Border Style="{StaticResource Card}" Padding="16">
-                                <StackPanel>
-                                    <Grid>
-                                        <TextBlock Style="{StaticResource Text.Body}">
-                                            <Run Text="{Binding Action, Mode=OneWay}" FontWeight="SemiBold" />
-                                            <Run Text="{Binding Optimization, Mode=OneWay}" FontWeight="SemiBold" />
-                                        </TextBlock>
-                                        <TextBlock Text="{Binding When}" Style="{StaticResource Text.Muted}" HorizontalAlignment="Right" />
-                                    </Grid>
-                                    <TextBlock Text="{Binding Outcome}" FontSize="12" Margin="0,4,0,0">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="{StaticResource Warning}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Success}" Value="True">
-                                                        <Setter Property="Foreground" Value="{StaticResource Success}" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                    <TextBlock Text="{Binding Message}" Style="{StaticResource Text.Muted}" Margin="0,4,0,0" />
-                                    <Grid Margin="0,10,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="16" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="BEFORE" Style="{StaticResource Text.Label}" />
-                                            <TextBlock Text="{Binding Before}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource Text.Secondary}" TextWrapping="Wrap" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2">
-                                            <TextBlock Text="AFTER" Style="{StaticResource Text.Label}" />
-                                            <TextBlock Text="{Binding After}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource Text.Secondary}" TextWrapping="Wrap" />
-                                        </StackPanel>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <TextBlock Text="{Binding Outcome}" FontSize="12" Margin="0,3,0,0">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource Warning}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Success}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource Success}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <TextBlock Text="{Binding Message}" Style="{StaticResource Text.Small}" Margin="0,3,0,0" />
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="BEFORE" Style="{StaticResource Text.Label}" />
+                        <TextBlock Text="{Binding Before}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource Text.Secondary}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="AFTER" Style="{StaticResource Text.Label}" />
+                        <TextBlock Text="{Binding After}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource Text.Secondary}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
             </StackPanel>
-        </ScrollViewer>
+        </Border>
     </DataTemplate>
 
-    <!-- ===================== Restore Center ===================== -->
+    <!-- ===================== Restore Center (also reachable from the activation screen) ===================== -->
     <DataTemplate DataType="{x:Type vm:RestoreCenterViewModel}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="32,24,32,32" MaxWidth="1100">
+            <StackPanel Margin="32,28,32,32" MaxWidth="1240">
                 <Grid>
                     <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource PageHeader}" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
@@ -579,37 +591,48 @@
                         <Button Content="Restore all" Style="{StaticResource Button.Primary}" Command="{Binding RestoreAllCommand}" />
                     </StackPanel>
                 </Grid>
-                <Border Background="{StaticResource Accent.Subtle}" CornerRadius="8" Padding="14,10" Margin="0,0,0,14"
+                <Border Background="{StaticResource Accent.Subtle}" CornerRadius="{StaticResource RadiusControl}" Padding="14,10" Margin="0,0,0,16"
                         Visibility="{Binding StatusMessage, Converter={StaticResource HasValueToVis}}">
                     <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource Text.Body}" />
                 </Border>
+
+                <TextBlock Text="Active changes" Style="{StaticResource Text.Section}" />
                 <Border Style="{StaticResource Card}" Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Nothing to restore. Sloomy Tweaks has no active changes on this system." Style="{StaticResource Text.Muted}" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE73E;" Style="{StaticResource Text.Icon}" Foreground="{StaticResource Success}" Margin="0,0,12,0" />
+                        <TextBlock Text="Nothing to restore. Sloomy Tweaks has no active changes on this PC." Style="{StaticResource Text.Muted}" />
+                    </StackPanel>
                 </Border>
-                <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl ItemsSource="{Binding Items}" ItemsPanel="{StaticResource CardGridPanel}" Margin="0,0,0,24">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:RestoreItemViewModel}">
-                            <Border Style="{StaticResource Card}" Padding="16">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource Card.Grid}">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="Restore" Style="{StaticResource Button.Secondary}" Command="{Binding RestoreCommand}"
+                                            VerticalAlignment="Top" Margin="12,0,0,0" />
                                     <StackPanel>
-                                        <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Body}" FontWeight="SemiBold" />
-                                        <TextBlock Style="{StaticResource Text.Muted}">
-                                            <Run Text="Original values saved" /> <Run Text="{Binding SavedAt, Mode=OneWay}" />
+                                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Text.Primary}" TextWrapping="Wrap" />
+                                        <TextBlock Style="{StaticResource Text.Small}" Margin="0,2,0,0">
+                                            <Run Text="Original saved" /> <Run Text="{Binding SavedAt, Mode=OneWay}" />
                                         </TextBlock>
-                                        <TextBlock Text="{Binding Values}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource Text.Secondary}" Margin="0,6,0,0" TextWrapping="Wrap" />
-                                        <TextBlock Text="Requires administrator rights" Foreground="{StaticResource Warning}" FontSize="12" Margin="0,4,0,0"
-                                                   Visibility="{Binding RequiresAdministrator, Converter={StaticResource BoolToVis}}" />
+                                        <TextBlock Text="{Binding Values}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource Text.Secondary}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="Requires administrator rights: restart Sloomy Tweaks as administrator to restore this." Foreground="{StaticResource Warning}" FontSize="12" Margin="0,6,0,0"
+                                                   TextWrapping="Wrap" Visibility="{Binding BlockedByElevation, Converter={StaticResource BoolToVis}}" />
                                     </StackPanel>
-                                    <Button Grid.Column="1" Content="Restore" Style="{StaticResource Button.Secondary}" Command="{Binding RestoreCommand}" VerticalAlignment="Center" />
-                                </Grid>
+                                </DockPanel>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <TextBlock Text="History" Style="{StaticResource Text.Section}" />
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="No operations recorded yet." Style="{StaticResource Text.Muted}"
+                                   Visibility="{Binding History.IsEmpty, Converter={StaticResource BoolToVis}}" />
+                        <ItemsControl ItemsSource="{Binding History.Items}" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
     </DataTemplate>
@@ -736,5 +759,70 @@
                 </Border>
             </StackPanel>
         </ScrollViewer>
+    </DataTemplate>
+
+    <!-- ===================== Activation screen (shown instead of the app without a license) ===================== -->
+    <DataTemplate DataType="{x:Type vm:ActivationViewModel}">
+        <Grid>
+            <!-- Subtle brand glow -->
+            <Ellipse Width="760" Height="760" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Opacity="0.55">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#338B5CF6" Offset="0" />
+                        <GradientStop Color="#008B5CF6" Offset="1" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+
+            <!-- Activation card -->
+            <Border Width="460" Background="{StaticResource Bg.Card}" BorderBrush="{StaticResource Border}" BorderThickness="1"
+                    CornerRadius="{StaticResource RadiusContainer}" Padding="36" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Effect="{StaticResource DialogShadow}" Visibility="{Binding ShowRestore, Converter={StaticResource BoolToVis}, ConverterParameter=invert}">
+                <StackPanel>
+                    <Image Source="/SloomyTweaks;component/Assets/SloomyTweaks.png" Width="52" Height="52" HorizontalAlignment="Left" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <TextBlock Text="Sloomy Tweaks" Style="{StaticResource Text.PageTitle}" FontSize="24" Margin="0,18,0,4" />
+                    <TextBlock Text="Activate your license to continue." Style="{StaticResource Text.Muted}" />
+
+                    <Border Background="{StaticResource Warning.Subtle}" BorderBrush="#66F59E0B" BorderThickness="1" CornerRadius="{StaticResource RadiusControl}"
+                            Padding="12,9" Margin="0,16,0,0" Visibility="{Binding IsDevelopmentMode, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Development mode: this build uses a test license server. It is not a production build." Style="{StaticResource Text.Small}" Foreground="{StaticResource Warning}" />
+                    </Border>
+
+                    <TextBlock Text="LICENSE KEY" Style="{StaticResource Text.Label}" Margin="0,22,0,6" />
+                    <TextBox Text="{Binding LicenseKey, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource MonoFont}" FontSize="14"
+                             IsEnabled="{Binding IsConfigured}" AutomationProperties.Name="License key" />
+                    <Border Background="{StaticResource Bg.Elevated}" CornerRadius="{StaticResource RadiusControl}" Padding="12,9" Margin="0,12,0,0"
+                            Visibility="{Binding Message, Converter={StaticResource HasValueToVis}}">
+                        <TextBlock Text="{Binding Message}" Style="{StaticResource Text.Small}" Foreground="{StaticResource Text.Primary}" />
+                    </Border>
+                    <Button Content="Activate" Style="{StaticResource Button.Primary}" Command="{Binding ActivateCommand}" Margin="0,18,0,0" Padding="16,11" IsDefault="True" />
+
+                    <Border Style="{StaticResource Divider}" Margin="0,24,0,16" />
+                    <Button Style="{StaticResource Button.Link}" Command="{Binding ShowRestoreCommand}" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE777;" FontFamily="{StaticResource IconFont}" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Restore changes made by Sloomy Tweaks" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Text="Restoring your original Windows settings is always available, with or without a license." Style="{StaticResource Text.Small}" Margin="0,4,0,0" />
+                    <TextBlock Style="{StaticResource Text.Small}" Margin="0,16,0,0" Foreground="{StaticResource Text.Tertiary}">
+                        <Run Text="Device ID:" /> <Run Text="{Binding DeviceId, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" />
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <!-- Restore-only view -->
+            <Border Background="{StaticResource Bg.Primary}" Visibility="{Binding ShowRestore, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Top" Style="{StaticResource Button.Link}" Command="{Binding BackCommand}" HorizontalAlignment="Left" Margin="32,20,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE72B;" FontFamily="{StaticResource IconFont}" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Back to activation" />
+                        </StackPanel>
+                    </Button>
+                    <ContentPresenter Content="{Binding RestoreCenter}" />
+                </DockPanel>
+            </Border>
+        </Grid>
     </DataTemplate>
 </ResourceDictionary>

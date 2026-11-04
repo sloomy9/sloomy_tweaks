@@ -255,3 +255,132 @@ public sealed class PointerAccelerationPrimitive : ISettingPrimitive
 
     public bool IsRestored(SettingValue current, SettingValue original) => current == original;
 }
+
+/// <summary>
+/// Turns off the keyboard shortcuts that open accessibility prompts during games (Shift ×5 for
+/// Sticky Keys, holding right Shift for Filter Keys, holding Num Lock for Toggle Keys). Only the
+/// hotkey bits change; whether the features themselves are on is left untouched.
+/// </summary>
+public sealed class AccessibilityShortcutsPrimitive : ISettingPrimitive
+{
+    private readonly IAccessibilitySettings _settings;
+
+    public AccessibilityShortcutsPrimitive(IAccessibilitySettings settings) => _settings = settings;
+
+    public string Id => "User32\\SPI_ACCESSIBILITY_HOTKEYS";
+    public string DesiredDescription => "Sticky/Filter/Toggle Keys keyboard shortcuts = off (SKF/FKF/TKF_HOTKEYACTIVE cleared)";
+
+    public SettingValue Read() => new(true, "a11y", _settings.Get().ToString());
+
+    public bool? IsDesired(SettingValue current) =>
+        AccessibilityFlags.TryParse(current.Data, out var f) ? !f.AnyShortcutActive : null;
+
+    public void ApplyDesired() => _settings.Set(_settings.Get().WithoutShortcuts());
+
+    public void Restore(SettingValue original)
+    {
+        if (!AccessibilityFlags.TryParse(original.Data, out var o))
+            throw new InvalidOperationException($"Stored accessibility flags are invalid: '{original.Data}'.");
+        _settings.Set(_settings.Get().WithShortcutBitsFrom(o));
+    }
+
+    public bool IsRestored(SettingValue current, SettingValue original) =>
+        AccessibilityFlags.TryParse(current.Data, out var c) && AccessibilityFlags.TryParse(original.Data, out var o)
+        && (c.StickyKeys & AccessibilityFlags.HotkeyActive) == (o.StickyKeys & AccessibilityFlags.HotkeyActive)
+        && (c.FilterKeys & AccessibilityFlags.HotkeyActive) == (o.FilterKeys & AccessibilityFlags.HotkeyActive)
+        && (c.ToggleKeys & AccessibilityFlags.HotkeyActive) == (o.ToggleKeys & AccessibilityFlags.HotkeyActive);
+}
+
+/// <summary>
+/// One AC value of the active power plan (PowerReadACValueIndex / PowerWriteACValueIndex). The scheme
+/// the value was read from is stored with it, so restore writes back to that same plan even if the user
+/// switched plans in the meantime.
+/// </summary>
+public sealed class PowerSettingPrimitive : ISettingPrimitive
+{
+    private readonly IPowerManagement _power;
+    private readonly Guid _subgroup;
+    private readonly Guid _setting;
+    private readonly uint _desired;
+    private readonly string _name;
+
+    public PowerSettingPrimitive(IPowerManagement power, Guid subgroup, Guid setting, uint desired, string name)
+    {
+        _power = power;
+        _subgroup = subgroup;
+        _setting = setting;
+        _desired = desired;
+        _name = name;
+    }
+
+    public string Id => $"Power\\{_subgroup:D}\\{_setting:D}";
+    public string DesiredDescription => $"{_name} (plugged in) = {_desired} on the active power plan";
+
+    public SettingValue Read()
+    {
+        Guid scheme = _power.GetActiveScheme();
+        uint? v = _power.ReadAcValue(scheme, _subgroup, _setting);
+        return v is null ? SettingValue.Absent("power") : new SettingValue(true, "power", $"{scheme:D}|{v}");
+    }
+
+    public bool? IsDesired(SettingValue current)
+    {
+        if (!current.Exists) return null;
+        return TryParse(current.Data, out _, out uint v) ? v == _desired : null;
+    }
+
+    public void ApplyDesired()
+    {
+        Guid scheme = _power.GetActiveScheme();
+        _power.WriteAcValue(scheme, _subgroup, _setting, _desired);
+        _power.SetActiveScheme(scheme); // re-activate so the new value takes effect
+    }
+
+    public void Restore(SettingValue original)
+    {
+        if (!original.Exists || !TryParse(original.Data, out Guid scheme, out uint v))
+            throw new InvalidOperationException("No original power setting value was recorded.");
+        _power.WriteAcValue(scheme, _subgroup, _setting, v);
+        if (_power.GetActiveScheme() == scheme) _power.SetActiveScheme(scheme);
+    }
+
+    public bool IsRestored(SettingValue current, SettingValue original)
+    {
+        if (!TryParse(original.Data, out Guid scheme, out uint v)) return false;
+        return _power.ReadAcValue(scheme, _subgroup, _setting) == v;
+    }
+
+    private static bool TryParse(string? data, out Guid scheme, out uint value)
+    {
+        scheme = Guid.Empty;
+        value = 0;
+        string[]? p = data?.Split('|');
+        return p is { Length: 2 } && Guid.TryParse(p[0], out scheme) && uint.TryParse(p[1], out value);
+    }
+}
+
+/// <summary>NTFS delete notifications (TRIM) via `fsutil behavior ... disabledeletenotify`. Desired: 0 (enabled).</summary>
+public sealed class TrimPrimitive : ISettingPrimitive
+{
+    private readonly IFileSystemBehavior _fs;
+
+    public TrimPrimitive(IFileSystemBehavior fs) => _fs = fs;
+
+    public string Id => "Fsutil\\NTFS\\DisableDeleteNotify";
+    public string DesiredDescription => "NTFS DisableDeleteNotify = 0 (TRIM enabled)";
+
+    public SettingValue Read() => _fs.QueryNtfsDisableDeleteNotify() is { } v
+        ? new SettingValue(true, "fsutil", v.ToString(CultureInfo.InvariantCulture))
+        : SettingValue.Absent("fsutil");
+
+    public bool? IsDesired(SettingValue current) => current.Exists ? current.Data == "0" : null;
+    public void ApplyDesired() => _fs.SetNtfsDisableDeleteNotify(0);
+
+    public void Restore(SettingValue original)
+    {
+        if (!original.Exists) return; // the value could not be read before; nothing to put back
+        _fs.SetNtfsDisableDeleteNotify(int.Parse(original.Data!, CultureInfo.InvariantCulture));
+    }
+
+    public bool IsRestored(SettingValue current, SettingValue original) => !original.Exists || current == original;
+}

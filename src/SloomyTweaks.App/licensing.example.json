@@ -1,5 +1,6 @@
 {
-  "serverUrl": "https://licenses.example.com/",
+  "environment": "production",
+  "serverUrl": "https://licenses.yourdomain.com/",
   "keys": [
     {
       "kid": "k1",

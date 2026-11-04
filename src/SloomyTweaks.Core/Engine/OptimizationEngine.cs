@@ -37,7 +37,16 @@ public sealed record OptimizationStatus(
     CompatibilityResult Compatibility,
     bool HasBackup,
     IReadOnlyDictionary<string, SettingValue> CurrentValues,
-    string? DetectionError);
+    string? DetectionError)
+{
+    /// <summary>The real configuration (Enabled / Disabled / Unknown), independent of a pending restart.</summary>
+    public OptimizationState ConfigState { get; init; } = OptimizationState.Unknown;
+    /// <summary>A change was made since the last boot and needs a restart to take effect.</summary>
+    public bool RestartPending { get; init; }
+    /// <summary>For selector items: the current value.</summary>
+    public string? SelectedValue { get; init; }
+    public DateTimeOffset? BackupCreatedAt { get; init; }
+}
 
 /// <summary>
 /// Implements the Sloomy Tweaks safe optimization workflow:
@@ -91,27 +100,34 @@ public sealed class OptimizationEngine
         Optimization opt = Get(id);
         SystemContext ctx = _context();
         CompatibilityResult compat = opt.CheckCompatibility(ctx);
-        bool hasBackup = _backups.Get(id) is not null;
+        OptimizationBackup? backup = _backups.Get(id);
 
-        if (opt.Definition.Kind != OptimizationKind.Actionable)
+        if (!opt.Definition.ChangesSystem)
             return new(opt, OptimizationState.Unsupported, compat, false, new Dictionary<string, SettingValue>(), null);
 
         try
         {
             var current = opt.ReadCurrent();
-            OptimizationState state = compat.Status == CompatibilityStatus.Unsupported
-                ? OptimizationState.Unsupported
-                : opt.DetectState(current);
+            OptimizationState config = opt.Selector is null ? opt.DetectState(current) : OptimizationState.Enabled;
+            OptimizationState state = compat.Status == CompatibilityStatus.Unsupported ? OptimizationState.Unsupported : config;
+            bool restartPending = opt.Definition.RequiresRestart && IsRestartPending(id, ctx);
+            if (restartPending) state = OptimizationState.RestartPending;
 
-            if (opt.Definition.RequiresRestart && IsRestartPending(id, ctx))
-                state = OptimizationState.RestartPending;
-
-            return new(opt, state, compat, hasBackup, current, null);
+            return new(opt, state, compat, backup is not null, current, null)
+            {
+                ConfigState = config,
+                RestartPending = restartPending,
+                SelectedValue = opt.Selector?.CurrentValue(current),
+                BackupCreatedAt = backup?.CreatedAt,
+            };
         }
         catch (Exception e) when (IsRecoverable(e))
         {
             _log.Error("optimization.detect_failed", $"State detection failed for {id}", e, new Dictionary<string, object?> { ["id"] = id });
-            return new(opt, OptimizationState.Unknown, compat, hasBackup, new Dictionary<string, SettingValue>(), e.Message);
+            return new(opt, OptimizationState.Unknown, compat, backup is not null, new Dictionary<string, SettingValue>(), e.Message)
+            {
+                BackupCreatedAt = backup?.CreatedAt,
+            };
         }
     }
 
@@ -121,6 +137,20 @@ public sealed class OptimizationEngine
         try
         {
             return await Task.Run(() => ApplyCore(id, warningsAcknowledged), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>Sets a selector item to <paramref name="value"/> with the same safe workflow as <see cref="ApplyAsync"/>.</summary>
+    public async Task<OperationResult> SelectAsync(string id, string value, bool warningsAcknowledged, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await Task.Run(() => SelectCore(id, value, warningsAcknowledged), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -143,18 +173,44 @@ public sealed class OptimizationEngine
 
     private OperationResult ApplyCore(string id, bool warningsAcknowledged)
     {
-        var steps = new List<string>();
         Optimization opt = Get(id);
-        OptimizationDefinition def = opt.Definition;
+        if (opt.Definition.Kind != OptimizationKind.Actionable)
+            return Finish(id, OperationAction.Apply, opt.Definition.Kind == OptimizationKind.Selector ? OperationOutcome.NotActionable : OperationOutcome.NotActionable,
+                opt.Definition.Kind == OptimizationKind.Selector ? "Choose a value for this setting instead." : "This item is guidance only; Sloomy Tweaks does not change it.",
+                new List<string>(), null, null);
+        SystemContext ctx = _context();
+        return ChangeCore(opt, opt.Primitives, opt.CheckCompatibility(ctx), warningsAcknowledged, null);
+    }
 
-        if (def.Kind != OptimizationKind.Actionable)
-            return Finish(id, OperationAction.Apply, OperationOutcome.NotActionable, "This item is guidance only; Sloomy Tweaks does not change it.", steps, null, null);
+    private OperationResult SelectCore(string id, string value, bool warningsAcknowledged)
+    {
+        Optimization opt = Get(id);
+        if (opt.Selector is null)
+            return Finish(id, OperationAction.Apply, OperationOutcome.NotActionable, "This item is not a selector.", new List<string>(), null, null);
+        if (!opt.Selector.Options().Any(o => o.Value == value))
+            return Finish(id, OperationAction.Apply, OperationOutcome.Unsupported, $"'{value}' is not an available option on this system.", new List<string>(), null, null);
+
+        SystemContext ctx = _context();
+        CompatibilityResult baseCompat = opt.CheckCompatibility(ctx);
+        CompatibilityResult valueCompat = opt.Selector.CompatibilityFor?.Invoke(ctx, value) ?? CompatibilityResult.Compatible();
+        var merged = new CompatibilityResult(
+            (CompatibilityStatus)Math.Max((int)baseCompat.Status, (int)valueCompat.Status),
+            baseCompat.Reasons.Concat(valueCompat.Reasons).ToArray());
+        return ChangeCore(opt, opt.Selector.PrimitivesFor(value), merged, warningsAcknowledged, value);
+    }
+
+    private OperationResult ChangeCore(Optimization opt, IReadOnlyList<ISettingPrimitive> primitives, CompatibilityResult compat,
+        bool warningsAcknowledged, string? selectedValue)
+    {
+        var steps = new List<string>();
+        string id = opt.Id;
+        OptimizationDefinition def = opt.Definition;
 
         // 1. Detect current configuration.
         IReadOnlyDictionary<string, SettingValue> before;
         try
         {
-            before = opt.ReadCurrent();
+            before = primitives.ToDictionary(p => p.Id, p => p.Read());
             steps.Add("Detected current configuration: " + Describe(before));
         }
         catch (Exception e) when (IsRecoverable(e))
@@ -163,8 +219,6 @@ public sealed class OptimizationEngine
         }
 
         // 2. Hardware and Windows compatibility.
-        SystemContext ctx = _context();
-        CompatibilityResult compat = opt.CheckCompatibility(ctx);
         if (compat.Status == CompatibilityStatus.Unsupported)
             return Finish(id, OperationAction.Apply, OperationOutcome.Unsupported, string.Join(" ", compat.Reasons), steps, before, null);
         if (compat.RequiresAcknowledgement && !warningsAcknowledged)
@@ -178,11 +232,11 @@ public sealed class OptimizationEngine
         // 4. Conflicts.
         foreach (string conflictId in def.ConflictsWith)
         {
-            if (_catalog.ContainsKey(conflictId) && GetStatus(conflictId).State is OptimizationState.Enabled or OptimizationState.RestartPending)
+            if (_catalog.ContainsKey(conflictId) && GetStatus(conflictId).ConfigState == OptimizationState.Enabled && _backups.Get(conflictId) is not null)
                 return Finish(id, OperationAction.Apply, OperationOutcome.Conflict, $"Conflicts with '{_catalog[conflictId].Definition.Name}', which is currently enabled.", steps, before, null);
         }
 
-        if (opt.DetectState(before) == OptimizationState.Enabled)
+        if (primitives.All(p => p.IsDesired(before[p.Id]) == true))
             return Finish(id, OperationAction.Apply, OperationOutcome.AlreadyInDesiredState, "Already configured. No changes were made.", steps, before, before, log: false);
 
         // 5. Save original values (keep the earliest backup if one already exists).
@@ -208,7 +262,7 @@ public sealed class OptimizationEngine
         var applied = new List<ISettingPrimitive>();
         try
         {
-            foreach (ISettingPrimitive p in opt.Primitives)
+            foreach (ISettingPrimitive p in primitives)
             {
                 p.ApplyDesired();
                 applied.Add(p);
@@ -219,14 +273,14 @@ public sealed class OptimizationEngine
         {
             string rollback = Rollback(applied, before, steps);
             if (existing is null) _backups.Delete(id);
-            return Finish(id, OperationAction.Apply, OperationOutcome.FailedAndRolledBack, $"The change failed and was rolled back. {rollback}", steps, before, SafeRead(opt), e);
+            return Finish(id, OperationAction.Apply, OperationOutcome.FailedAndRolledBack, $"The change failed and was rolled back. {rollback}", steps, before, SafeRead(primitives), e);
         }
 
         // 8. Verify by reading the configuration back.
         IReadOnlyDictionary<string, SettingValue> after;
         try
         {
-            after = opt.ReadCurrent();
+            after = primitives.ToDictionary(p => p.Id, p => p.Read());
         }
         catch (Exception e) when (IsRecoverable(e))
         {
@@ -235,7 +289,7 @@ public sealed class OptimizationEngine
             return Finish(id, OperationAction.Apply, OperationOutcome.FailedAndRolledBack, $"Could not verify the change; it was rolled back. {rollback}", steps, before, null, e);
         }
 
-        var unverified = opt.Primitives.Where(p => p.IsDesired(after[p.Id]) != true).ToList();
+        var unverified = primitives.Where(p => p.IsDesired(after[p.Id]) != true).ToList();
         if (unverified.Count > 0)
         {
             string detail = string.Join("; ", unverified.Select(p => $"{p.Id} reads {after[p.Id]}"));
@@ -244,14 +298,15 @@ public sealed class OptimizationEngine
             if (existing is null) _backups.Delete(id);
             return Finish(id, OperationAction.Apply, OperationOutcome.VerificationFailed,
                 $"Windows did not keep the new value (possibly enforced by policy or another tool). The change was rolled back. {rollback}",
-                steps, before, SafeRead(opt), detail: detail);
+                steps, before, SafeRead(primitives), detail: detail);
         }
         steps.Add("Verified resulting configuration: " + Describe(after));
 
         // 9/10. Log and offer rollback.
+        string what = selectedValue is null ? "Applied and verified." : "Changed and verified.";
         string message = def.RequiresRestart
-            ? "Applied and verified. Restart Windows for the change to take effect. You can restore the original setting at any time."
-            : "Applied and verified. You can restore the original setting at any time.";
+            ? $"{what} Restart Windows for the change to take effect. You can restore the original setting at any time."
+            : $"{what} You can restore the original setting at any time.";
         return Finish(id, OperationAction.Apply, OperationOutcome.Succeeded, message, steps, before, after, restartRequired: def.RequiresRestart);
     }
 
@@ -356,9 +411,11 @@ public sealed class OptimizationEngine
         return result;
     }
 
-    private static IReadOnlyDictionary<string, SettingValue>? SafeRead(Optimization opt)
+    private static IReadOnlyDictionary<string, SettingValue>? SafeRead(Optimization opt) => SafeRead(opt.Primitives);
+
+    private static IReadOnlyDictionary<string, SettingValue>? SafeRead(IReadOnlyList<ISettingPrimitive> primitives)
     {
-        try { return opt.ReadCurrent(); }
+        try { return primitives.ToDictionary(p => p.Id, p => p.Read()); }
         catch (Exception e) when (IsRecoverable(e)) { return null; }
     }
 

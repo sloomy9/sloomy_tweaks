@@ -18,7 +18,7 @@ internal static class EvidenceExporter
 {
     public static string ToMarkdown()
     {
-        var catalog = OptimizationCatalog.Create(new FakeRegistry(), new FakePower(), new FakeMouse());
+        var catalog = TestCatalog.Create(new FakeRegistry(), new FakePower(), new FakeMouse());
         var sb = new StringBuilder();
         sb.AppendLine("# Sloomy Tweaks — Evidence Registry");
         sb.AppendLine();

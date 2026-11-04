@@ -59,13 +59,27 @@ public static class LicenseServerApp
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
         });
 
+        if (options.TrustForwardedHeaders)
+        {
+            builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+            {
+                o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+                // The proxy runs in the same private network (docker compose); accept it as known.
+                o.KnownNetworks.Clear();
+                o.KnownProxies.Clear();
+                o.ForwardLimit = 1;
+            });
+        }
+
         WebApplication app = builder.Build();
+
+        if (options.TrustForwardedHeaders) app.UseForwardedHeaders();
 
         if (!app.Environment.IsDevelopment())
         {
             // TLS is terminated by Kestrel or a reverse proxy; never serve the API over plain HTTP in production.
             app.UseHsts();
-            app.UseHttpsRedirection();
+            if (!options.TrustForwardedHeaders) app.UseHttpsRedirection();
         }
         app.Use(async (ctx, next) =>
         {

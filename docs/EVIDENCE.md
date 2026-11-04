@@ -16,7 +16,9 @@ Generated from `OptimizationCatalog` (`tests/SloomyTweaks.Tests -- --export-evid
 | [Windows Game Mode](#windows-game-mode) | Actionable | Documented | Yes | No | No |
 | [Turn off background recording](#turn-off-background-recording) | Actionable | Documented | Yes | No | No |
 | [Turn off Enhance pointer precision](#turn-off-enhance-pointer-precision) | Actionable | Documented | Yes | No | No |
-| [High performance power plan](#high-performance-power-plan) | Actionable | Experimental | No | No | No |
+| [Turn off accessibility shortcut prompts](#turn-off-accessibility-shortcut-prompts) | Actionable | Documented | Yes | No | No |
+| [Keep TRIM enabled for SSDs](#keep-trim-enabled-for-ssds) | Actionable | Documented | Yes | Yes | No |
+| [Turn off USB selective suspend (plugged in)](#turn-off-usb-selective-suspend-plugged-in) | Actionable | Experimental | No | No | No |
 | [Use NVIDIA Reflex in supported games](#use-nvidia-reflex-in-supported-games) | Guidance | Verified | No | — | — |
 | [Fortnite: measured, per-system configuration](#fortnite-measured-per-system-configuration) | Guidance | Documented | No | — | — |
 | [Disable CPU security mitigations (Spectre/Meltdown etc.)](#disable-cpu-security-mitigations-spectremeltdown-etc) | NotOffered | NotRecommended | No | — | — |
@@ -27,6 +29,7 @@ Generated from `OptimizationCatalog` (`tests/SloomyTweaks.Tests -- --export-evid
 | [Timer resolution tools, HPET and dynamic tick changes](#timer-resolution-tools-hpet-and-dynamic-tick-changes) | NotOffered | NotRecommended | No | — | — |
 | [TCP registry tweaks (TcpAckFrequency, TCPNoDelay, NetworkThrottlingIndex)](#tcp-registry-tweaks-tcpackfrequency-tcpnodelay-networkthrottlingindex) | NotOffered | NotRecommended | No | — | — |
 | [Change DNS to reduce game ping](#change-dns-to-reduce-game-ping) | NotOffered | NotRecommended | No | — | — |
+| [Active power plan](#active-power-plan) | Selector | Experimental | No | — | — |
 
 ## Hardware-accelerated GPU scheduling
 
@@ -141,29 +144,71 @@ Generated from `OptimizationCatalog` (`tests/SloomyTweaks.Tests -- --export-evid
 **Sources.**
 - [Microsoft Learn — Accessibility parameters (SPI_GETMOUSE / SPI_SETMOUSE)](https://learn.microsoft.com/en-us/windows/win32/winauto/accessibility-parameters) — OfficialDocumentation
 
-## High performance power plan
+## Turn off accessibility shortcut prompts
 
-- **Id:** `power.high-performance-plan` · **Category:** Power · **Kind:** Actionable · **Evidence:** Experimental
-- **Changes:** `Active power scheme = 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c`
+- **Id:** `input.accessibility-shortcuts-off` · **Category:** InputUsb · **Kind:** Actionable · **Evidence:** Documented
+- **Changes:** `Sticky/Filter/Toggle Keys keyboard shortcuts = off (SKF/FKF/TKF_HOTKEYACTIVE cleared)`
 
-**What it does.** Switches the active power plan to the built-in 'High performance' plan. Your previous plan is restored exactly.
+**What it does.** Prevents the Sticky Keys, Filter Keys and Toggle Keys prompts from opening when you press Shift five times or hold Shift or Num Lock during a game.
 
-**Mechanism.** Calls PowerSetActiveScheme with the High performance scheme. That plan keeps processor performance states higher, trading power and heat for faster clock ramp-up.
+**Mechanism.** Clears the hotkey flag (SKF/FKF/TKF_HOTKEYACTIVE) of STICKYKEYS, FILTERKEYS and TOGGLEKEYS through SystemParametersInfo. The features themselves and all their other options are left as they are.
 
-**Expected benefit.** Possibly faster frequency response on some systems. No consistent, independent gaming measurements were found; on modern CPUs Balanced is often equivalent, and on some it is better.
+**Expected benefit.** Stops a system prompt from taking focus away from a fullscreen game. This is about interruptions, not FPS or latency.
 
-**What is not known.** Not eligible for the recommended flow. Community reports indicate AMD's dual-CCD X3D core parking works with the Balanced plan; Intel hybrid CPUs rely on Windows scheduling features that interact with power settings.
+**What is not known.** The flags and API are documented by Microsoft. People who rely on these accessibility shortcuts should keep them on; the features stay available in Settings > Accessibility > Keyboard.
 
-**Compatibility.** Desktop systems where Windows exposes the High performance plan. Not available on many Modern Standby devices.
+**Compatibility.** All supported Windows versions. Per user. No restart.
 
 **Risks.**
-- Higher idle power, heat and fan noise.
-- On laptops: reduced battery life.
-- On Ryzen X3D processors it can interfere with AMD's core-parking behavior.
+- The keyboard shortcuts no longer turn these accessibility features on; use Settings > Accessibility > Keyboard instead.
 
 **Sources.**
+- [Microsoft Learn — STICKYKEYS structure (SKF_HOTKEYACTIVE)](https://learn.microsoft.com/windows/win32/api/winuser/ns-winuser-stickykeys) — OfficialDocumentation
+- [Microsoft Learn — Accessibility parameters (SPI_GETMOUSE / SPI_SETMOUSE)](https://learn.microsoft.com/en-us/windows/win32/winauto/accessibility-parameters) — OfficialDocumentation
+
+## Keep TRIM enabled for SSDs
+
+- **Id:** `storage.trim-enabled` · **Category:** Storage · **Kind:** Actionable · **Evidence:** Documented
+- **Changes:** `NTFS DisableDeleteNotify = 0 (TRIM enabled)`
+
+**What it does.** Makes sure NTFS delete notifications (TRIM) are on, which is the Windows default. Useful if a tool or setting turned them off.
+
+**Mechanism.** Uses the documented `fsutil behavior set disabledeletenotify NTFS 0` interface. TRIM tells the SSD which blocks were freed by file deletions so it can manage them internally.
+
+**Expected benefit.** Restores the default behavior that helps SSDs maintain write performance over time. If TRIM is already on, nothing changes.
+
+**What is not known.** Microsoft documents that TRIM is on by default for NTFS and that the change needs no restart. Microsoft also notes some devices may perform worse with delete notifications on; restore if you notice that. Drives that do not support TRIM simply ignore it.
+
+**Compatibility.** NTFS volumes. Administrator rights required. No restart.
+
+**Risks.**
+- Rare devices perform worse with delete notifications on (Microsoft's note).
+
+**Sources.**
+- [Microsoft Learn — fsutil behavior (disabledeletenotify / TRIM)](https://learn.microsoft.com/windows-server/administration/windows-commands/fsutil-behavior) — OfficialDocumentation. TRIM is enabled by default on NTFS; enabling or disabling does not require a restart.
+
+## Turn off USB selective suspend (plugged in)
+
+- **Id:** `power.usb-selective-suspend-off` · **Category:** Power · **Kind:** Actionable · **Evidence:** Experimental
+- **Changes:** `USB selective suspend (plugged in) = 0 on the active power plan`
+
+**What it does.** Stops Windows from suspending idle USB devices while the PC is plugged in. Battery behavior is not changed.
+
+**Mechanism.** Sets the AC value of the 'USB selective suspend setting' (USB settings subgroup) of the active power plan to Disabled via PowerWriteACValueIndex, then re-activates the plan. The original value and plan are saved and restored exactly.
+
+**Expected benefit.** Can prevent USB peripherals from being suspended and woken, which is a common troubleshooting step for devices that briefly disconnect. No measured input-latency or FPS benefit is documented.
+
+**What is not known.** The setting is a standard Windows power option. There is no independent evidence of a gaming performance gain; it is offered for device stability. Applies only to the plan active when you turn it on.
+
+**Compatibility.** Systems where the active plan exposes the USB selective suspend setting.
+
+**Risks.**
+- Slightly higher power use while plugged in.
+- If you switch power plans, the new plan keeps its own value.
+
+**Sources.**
+- [ElevenForum — Enable or Disable USB Selective Suspend in Windows 11 (power setting GUIDs)](https://elevenforum.com/t/enable-or-disable-usb-selective-suspend-in-windows-11.10251/) — CommunityDocumentation. Documents the USB settings subgroup and selective suspend setting GUIDs used by powercfg. Not a Microsoft source.
 - [Microsoft Learn — PowerSetActiveScheme function](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powersetactivescheme) — OfficialDocumentation
-- [HWCooling — Ryzen 7000X3D technical details and asymmetric CCX handling](https://www.hwcooling.net/en/ryzen-7000x3d-technical-details-and-asymmetric-ccx-handling/) — TechnicalReporting. Explains that AMD's driver relies on Windows Game Mode / Xbox Game Bar game detection to prefer V-Cache cores.
 
 ## Use NVIDIA Reflex in supported games
 
@@ -356,3 +401,27 @@ Generated from `OptimizationCatalog` (`tests/SloomyTweaks.Tests -- --export-evid
 
 **Sources.**
 - None found that supports a gaming benefit.
+
+## Active power plan
+
+- **Id:** `power.active-plan` · **Category:** Power · **Kind:** Selector · **Evidence:** Experimental
+- **Changes:** `Active power scheme = 00000000-0000-0000-0000-000000000000`
+
+**What it does.** Chooses which Windows power plan is active. Sloomy Tweaks saves the plan you had before the first change and can restore it exactly.
+
+**Mechanism.** Calls PowerSetActiveScheme with the selected plan. Plans differ mainly in how aggressively the processor lowers clocks and parks cores when idle.
+
+**Expected benefit.** A higher-performance plan can make the processor ramp up faster on some systems at the cost of power and heat. No consistent, independent gaming measurements were found; on many modern CPUs Balanced performs the same, and on some it is better.
+
+**What is not known.** The mechanism is documented by Microsoft. Gaming benefit is hardware-dependent and unproven. Community reports indicate AMD's dual-CCD X3D core parking works with the Balanced plan. Measure with the Benchmark Center before keeping a change.
+
+**Compatibility.** All Windows versions. The list shows only the plans that exist on this PC (Modern Standby devices often expose only Balanced).
+
+**Risks.**
+- Higher idle power, heat and fan noise with performance plans.
+- On laptops: reduced battery life.
+- On Ryzen X3D processors, plans other than Balanced can interfere with AMD's core-parking behavior.
+
+**Sources.**
+- [Microsoft Learn — PowerSetActiveScheme function](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powersetactivescheme) — OfficialDocumentation
+- [HWCooling — Ryzen 7000X3D technical details and asymmetric CCX handling](https://www.hwcooling.net/en/ryzen-7000x3d-technical-details-and-asymmetric-ccx-handling/) — TechnicalReporting. Explains that AMD's driver relies on Windows Game Mode / Xbox Game Bar game detection to prefer V-Cache cores.

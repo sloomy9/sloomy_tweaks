@@ -90,6 +90,18 @@ public sealed unsafe class WindowsPowerManagement : IPowerManagement
         return result;
     }
 
+    public uint? ReadAcValue(Guid scheme, Guid subgroup, Guid setting)
+    {
+        uint rc = PowerReadACValueIndex(IntPtr.Zero, in scheme, in subgroup, in setting, out uint value);
+        return rc == ERROR_SUCCESS ? value : null;
+    }
+
+    public void WriteAcValue(Guid scheme, Guid subgroup, Guid setting, uint value)
+    {
+        uint rc = PowerWriteACValueIndex(IntPtr.Zero, in scheme, in subgroup, in setting, value);
+        if (rc != ERROR_SUCCESS) throw new Win32Exception((int)rc, "PowerWriteACValueIndex failed.");
+    }
+
     public static string ReadName(Guid scheme)
     {
         uint size = 0;
@@ -125,6 +137,98 @@ public sealed unsafe class WindowsMouseSettings : IMouseSettings
         // Persist to the user profile and broadcast WM_SETTINGCHANGE so the change applies immediately.
         if (!SystemParametersInfoW(SPI_SETMOUSE, 0, values, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "SPI_SETMOUSE failed.");
+    }
+}
+
+/// <summary>STICKYKEYS / FILTERKEYS / TOGGLEKEYS flags through SystemParametersInfo.</summary>
+[SupportedOSPlatform("windows")]
+public sealed unsafe class WindowsAccessibilitySettings : IAccessibilitySettings
+{
+    public AccessibilityFlags Get()
+    {
+        var sticky = new FLAGSONLY { cbSize = (uint)sizeof(FLAGSONLY) };
+        var toggle = new FLAGSONLY { cbSize = (uint)sizeof(FLAGSONLY) };
+        var filter = new FILTERKEYS { cbSize = (uint)sizeof(FILTERKEYS) };
+        Check(SystemParametersInfoW(SPI_GETSTICKYKEYS, sticky.cbSize, &sticky, 0), "SPI_GETSTICKYKEYS");
+        Check(SystemParametersInfoW(SPI_GETFILTERKEYS, filter.cbSize, &filter, 0), "SPI_GETFILTERKEYS");
+        Check(SystemParametersInfoW(SPI_GETTOGGLEKEYS, toggle.cbSize, &toggle, 0), "SPI_GETTOGGLEKEYS");
+        return new AccessibilityFlags(sticky.dwFlags, filter.dwFlags, toggle.dwFlags);
+    }
+
+    public void Set(AccessibilityFlags flags)
+    {
+        // Read the full structures first so every other member (timings etc.) is written back unchanged.
+        var sticky = new FLAGSONLY { cbSize = (uint)sizeof(FLAGSONLY) };
+        var toggle = new FLAGSONLY { cbSize = (uint)sizeof(FLAGSONLY) };
+        var filter = new FILTERKEYS { cbSize = (uint)sizeof(FILTERKEYS) };
+        Check(SystemParametersInfoW(SPI_GETSTICKYKEYS, sticky.cbSize, &sticky, 0), "SPI_GETSTICKYKEYS");
+        Check(SystemParametersInfoW(SPI_GETFILTERKEYS, filter.cbSize, &filter, 0), "SPI_GETFILTERKEYS");
+        Check(SystemParametersInfoW(SPI_GETTOGGLEKEYS, toggle.cbSize, &toggle, 0), "SPI_GETTOGGLEKEYS");
+        sticky.dwFlags = flags.StickyKeys;
+        filter.dwFlags = flags.FilterKeys;
+        toggle.dwFlags = flags.ToggleKeys;
+        const uint persist = SPIF_UPDATEINIFILE | SPIF_SENDCHANGE;
+        Check(SystemParametersInfoW(SPI_SETSTICKYKEYS, sticky.cbSize, &sticky, persist), "SPI_SETSTICKYKEYS");
+        Check(SystemParametersInfoW(SPI_SETFILTERKEYS, filter.cbSize, &filter, persist), "SPI_SETFILTERKEYS");
+        Check(SystemParametersInfoW(SPI_SETTOGGLEKEYS, toggle.cbSize, &toggle, persist), "SPI_SETTOGGLEKEYS");
+    }
+
+    private static void Check(bool ok, string what)
+    {
+        if (!ok) throw new Win32Exception(Marshal.GetLastWin32Error(), what + " failed.");
+    }
+}
+
+/// <summary>
+/// TRIM through the documented `fsutil behavior` command (there is no public API for this setting).
+/// fsutil requires administrator rights; queries without them return null.
+/// </summary>
+[SupportedOSPlatform("windows")]
+public sealed class WindowsFileSystemBehavior : IFileSystemBehavior
+{
+    private static readonly string Fsutil = Path.Combine(Environment.SystemDirectory, "fsutil.exe");
+
+    public int? QueryNtfsDisableDeleteNotify()
+    {
+        var (code, output) = Run("behavior", "query", "DisableDeleteNotify");
+        return code == 0 ? ParseNtfs(output) : null;
+    }
+
+    public void SetNtfsDisableDeleteNotify(int value)
+    {
+        if (value is not (0 or 1)) throw new ArgumentOutOfRangeException(nameof(value));
+        // Documented form: applies to NTFS (and ReFS v1).
+        var (code, output) = Run("behavior", "set", "disabledeletenotify", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (code != 0) throw new InvalidOperationException($"fsutil exited with code {code}: {output.Trim()}");
+    }
+
+    /// <summary>Accepts "NTFS DisableDeleteNotify = 0 (...)" (Windows 10+) and "DisableDeleteNotify = 0" (older).</summary>
+    public static int? ParseNtfs(string output)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(output, @"NTFS\s+DisableDeleteNotify\s*=\s*([01])");
+        if (!m.Success) m = System.Text.RegularExpressions.Regex.Match(output, @"^\s*DisableDeleteNotify\s*=\s*([01])", System.Text.RegularExpressions.RegexOptions.Multiline);
+        return m.Success ? m.Groups[1].Value[0] - '0' : null;
+    }
+
+    private static (int Code, string Output) Run(params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(Fsutil)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (string a in args) psi.ArgumentList.Add(a);
+        using var p = System.Diagnostics.Process.Start(psi) ?? throw new InvalidOperationException("fsutil could not be started.");
+        Task<string> stdout = p.StandardOutput.ReadToEndAsync();
+        Task<string> stderr = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(10_000))
+        {
+            try { p.Kill(); } catch (InvalidOperationException) { }
+            throw new TimeoutException("fsutil did not respond within 10 seconds.");
+        }
+        return (p.ExitCode, stdout.Result + stderr.Result);
     }
 }
 

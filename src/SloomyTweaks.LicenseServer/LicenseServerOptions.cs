@@ -21,6 +21,8 @@ public sealed class LicenseServerOptions
     public int MaxRefreshAgeDays { get; set; } = 30;
     public int ActivationRequestsPerMinute { get; set; } = 10;
     public int DefaultMaxDevices { get; set; } = 2;
+    /// <summary>Set to true only when the server runs behind a trusted reverse proxy (Caddy, nginx) that sets X-Forwarded-For/Proto.</summary>
+    public bool TrustForwardedHeaders { get; set; }
 
     public void Validate()
     {

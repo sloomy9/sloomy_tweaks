@@ -64,7 +64,7 @@ public sealed class AppDataStoreTests : IDisposable
     {
         using var store = new AppDataStore(DbPath);
         var mouse = new FakeMouse();
-        var engine = new OptimizationEngine(OptimizationCatalog.Create(new FakeRegistry(), new FakePower(), mouse),
+        var engine = new OptimizationEngine(TestCatalog.Create(new FakeRegistry(), new FakePower(), mouse),
             () => TestSystems.Win11(), new FakePrivileges(true), store, store, new FakeClock(), NullLogger.Instance);
         Assert.True(engine.ApplyAsync(OptimizationCatalog.Ids.PointerPrecision, false).Result.Success);
         Assert.NotNull(((IBackupStore)store).Get(OptimizationCatalog.Ids.PointerPrecision));

@@ -22,7 +22,10 @@ public static class OptimizationCatalog
         public const string WindowedGameOptimizations = "gpu.windowed-game-optimizations";
         public const string NvidiaReflex = "gpu.nvidia-reflex-guidance";
         public const string PointerPrecision = "input.enhance-pointer-precision-off";
-        public const string HighPerformancePlan = "power.high-performance-plan";
+        public const string PowerPlan = "power.active-plan";
+        public const string UsbSelectiveSuspend = "power.usb-selective-suspend-off";
+        public const string AccessibilityShortcuts = "input.accessibility-shortcuts-off";
+        public const string Trim = "storage.trim-enabled";
         public const string FortniteProfile = "gaming.fortnite-profile-guidance";
         public const string NoPageFileDisable = "memory.disable-page-file";
         public const string NoRamCleaner = "memory.standby-list-cleaning";
@@ -36,6 +39,9 @@ public static class OptimizationCatalog
 
     public static readonly Guid HighPerformanceSchemeGuid = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
     public static readonly Guid BalancedSchemeGuid = new("381b4222-f694-41f0-9685-ff5bb260df2e");
+    public static readonly Guid UltimatePerformanceSchemeGuid = new("e9a42b02-d5df-448d-aa00-03f14749eb61");
+    public static readonly Guid UsbSubgroupGuid = new("2a737441-1930-4402-8d77-b2bebba308a3");
+    public static readonly Guid UsbSelectiveSuspendGuid = new("48e6b7a6-50f5-4782-a5d4-53bb8f07e226");
 
     // ---- Sources (checked) -------------------------------------------------------------------
     private static readonly EvidenceSource MsLearnGamingFeatures = new(
@@ -110,13 +116,33 @@ public static class OptimizationCatalog
         "https://github.com/MicrosoftDocs/windows-itpro-docs/blob/master/windows/client-management/determine-appropriate-page-file-size.md",
         SourceKind.OfficialDocumentation);
 
+    private static readonly EvidenceSource MsStickyKeys = new(
+        "Microsoft Learn — STICKYKEYS structure (SKF_HOTKEYACTIVE)",
+        "https://learn.microsoft.com/windows/win32/api/winuser/ns-winuser-stickykeys",
+        SourceKind.OfficialDocumentation);
+
+    private static readonly EvidenceSource MsFsutilBehavior = new(
+        "Microsoft Learn — fsutil behavior (disabledeletenotify / TRIM)",
+        "https://learn.microsoft.com/windows-server/administration/windows-commands/fsutil-behavior",
+        SourceKind.OfficialDocumentation,
+        "TRIM is enabled by default on NTFS; enabling or disabling does not require a restart.");
+
+    private static readonly EvidenceSource UsbSuspendGuide = new(
+        "ElevenForum — Enable or Disable USB Selective Suspend in Windows 11 (power setting GUIDs)",
+        "https://elevenforum.com/t/enable-or-disable-usb-selective-suspend-in-windows-11.10251/",
+        SourceKind.CommunityDocumentation,
+        "Documents the USB settings subgroup and selective suspend setting GUIDs used by powercfg. Not a Microsoft source.");
+
     // ---- Catalog -----------------------------------------------------------------------------
 
-    public static IReadOnlyList<Optimization> Create(IRegistryAccess registry, IPowerManagement power, IMouseSettings mouse)
+    public static IReadOnlyList<Optimization> Create(IRegistryAccess registry, IPowerManagement power, IMouseSettings mouse,
+        IAccessibilitySettings accessibility, IFileSystemBehavior fileSystem)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(power);
         ArgumentNullException.ThrowIfNull(mouse);
+        ArgumentNullException.ThrowIfNull(accessibility);
+        ArgumentNullException.ThrowIfNull(fileSystem);
 
         var list = new List<Optimization>
         {
@@ -125,7 +151,10 @@ public static class OptimizationCatalog
             Hags(registry),
             WindowedGameOptimizations(registry),
             PointerPrecision(mouse),
-            HighPerformancePlan(power),
+            AccessibilityShortcuts(accessibility),
+            PowerPlanSelector(power),
+            UsbSelectiveSuspend(power),
+            Trim(fileSystem),
             Guidance(Ids.NvidiaReflex, "Use NVIDIA Reflex in supported games", OptimizationCategory.Gpu,
                 description: "Enable NVIDIA Reflex Low Latency inside games that support it (Fortnite does) instead of stacking driver-level latency settings.",
                 mechanism: "Reflex is integrated into the game engine: the game paces CPU work so frames do not queue up in front of the GPU. Driver 'Low Latency Mode' limits queued frames from the driver side and, per TechSpot's testing, does not apply to DirectX 12 titles.",
@@ -259,6 +288,7 @@ public static class OptimizationCatalog
             CompatibilitySummary = "Windows 10 2004 (build 19041) or newer, a GPU and driver that support HAGS. Administrator rights required.",
             RequiresAdministrator = true,
             RequiresRestart = true,
+            Risk = RiskLevel.Medium,
         },
         new ISettingPrimitive[]
         {
@@ -315,36 +345,111 @@ public static class OptimizationCatalog
         },
         new ISettingPrimitive[] { new PointerAccelerationPrimitive(mouse) });
 
-    private static Optimization HighPerformancePlan(IPowerManagement power) => new(
+    private static Optimization PowerPlanSelector(IPowerManagement power) => new(
         new OptimizationDefinition
         {
-            Id = Ids.HighPerformancePlan,
-            Name = "High performance power plan",
+            Id = Ids.PowerPlan,
+            Name = "Active power plan",
+            Category = OptimizationCategory.Power,
+            Kind = OptimizationKind.Selector,
+            Description = "Chooses which Windows power plan is active. Sloomy Tweaks saves the plan you had before the first change and can restore it exactly.",
+            TechnicalMechanism = "Calls PowerSetActiveScheme with the selected plan. Plans differ mainly in how aggressively the processor lowers clocks and parks cores when idle.",
+            ExpectedBenefit = "A higher-performance plan can make the processor ramp up faster on some systems at the cost of power and heat. No consistent, independent gaming measurements were found; on many modern CPUs Balanced performs the same, and on some it is better.",
+            Evidence = EvidenceLevel.Experimental,
+            EvidenceNotes = "The mechanism is documented by Microsoft. Gaming benefit is hardware-dependent and unproven. Community reports indicate AMD's dual-CCD X3D core parking works with the Balanced plan. Measure with the Benchmark Center before keeping a change.",
+            Sources = new[] { MsPowerSetActiveScheme, X3DDriverBehavior },
+            Risks = new[] { "Higher idle power, heat and fan noise with performance plans.", "On laptops: reduced battery life.", "On Ryzen X3D processors, plans other than Balanced can interfere with AMD's core-parking behavior." },
+            CompatibilitySummary = "All Windows versions. The list shows only the plans that exist on this PC (Modern Standby devices often expose only Balanced).",
+            Risk = RiskLevel.Medium,
+        },
+        new ISettingPrimitive[] { new PowerSchemePrimitive(power, Guid.Empty) },
+        selector: new SelectorBehavior(
+            Options: () => power.ListSchemes().Select(p => new SelectorOption(p.Id.ToString("D"), p.Name)).ToList(),
+            CurrentValue: values => values.TryGetValue("Power\\ActiveScheme", out SettingValue? v) ? v.Data : null,
+            PrimitivesFor: value => new ISettingPrimitive[] { new PowerSchemePrimitive(power, Guid.Parse(value)) },
+            CompatibilityFor: (ctx, value) =>
+            {
+                var c = new CompatibilityBuilder();
+                Guid g = Guid.Parse(value);
+                bool performance = g == HighPerformanceSchemeGuid || g == UltimatePerformanceSchemeGuid;
+                if (performance && ctx.IsAmdX3D)
+                    c.Warn("Ryzen X3D detected: AMD's 3D V-Cache core preference is reported to work with the Balanced plan. A performance plan may reduce gaming performance on dual-CCD models.");
+                if (performance && ctx.IsHybridCpu == true)
+                    c.Warn("Hybrid (P-core/E-core) CPU detected: Windows scheduling on these CPUs is tuned for the Balanced plan. Measure before keeping this change.");
+                return c.Build();
+            }));
+
+    private static Optimization UsbSelectiveSuspend(IPowerManagement power) => new(
+        new OptimizationDefinition
+        {
+            Id = Ids.UsbSelectiveSuspend,
+            Name = "Turn off USB selective suspend (plugged in)",
             Category = OptimizationCategory.Power,
             Kind = OptimizationKind.Actionable,
-            Description = "Switches the active power plan to the built-in 'High performance' plan. Your previous plan is restored exactly.",
-            TechnicalMechanism = "Calls PowerSetActiveScheme with the High performance scheme. That plan keeps processor performance states higher, trading power and heat for faster clock ramp-up.",
-            ExpectedBenefit = "Possibly faster frequency response on some systems. No consistent, independent gaming measurements were found; on modern CPUs Balanced is often equivalent, and on some it is better.",
+            Description = "Stops Windows from suspending idle USB devices while the PC is plugged in. Battery behavior is not changed.",
+            TechnicalMechanism = "Sets the AC value of the 'USB selective suspend setting' (USB settings subgroup) of the active power plan to Disabled via PowerWriteACValueIndex, then re-activates the plan. The original value and plan are saved and restored exactly.",
+            ExpectedBenefit = "Can prevent USB peripherals from being suspended and woken, which is a common troubleshooting step for devices that briefly disconnect. No measured input-latency or FPS benefit is documented.",
             Evidence = EvidenceLevel.Experimental,
-            EvidenceNotes = "Not eligible for the recommended flow. Community reports indicate AMD's dual-CCD X3D core parking works with the Balanced plan; Intel hybrid CPUs rely on Windows scheduling features that interact with power settings.",
-            Sources = new[] { MsPowerSetActiveScheme, X3DDriverBehavior },
-            Risks = new[] { "Higher idle power, heat and fan noise.", "On laptops: reduced battery life.", "On Ryzen X3D processors it can interfere with AMD's core-parking behavior." },
-            CompatibilitySummary = "Desktop systems where Windows exposes the High performance plan. Not available on many Modern Standby devices.",
+            EvidenceNotes = "The setting is a standard Windows power option. There is no independent evidence of a gaming performance gain; it is offered for device stability. Applies only to the plan active when you turn it on.",
+            Sources = new[] { UsbSuspendGuide, MsPowerSetActiveScheme },
+            Risks = new[] { "Slightly higher power use while plugged in.", "If you switch power plans, the new plan keeps its own value." },
+            CompatibilitySummary = "Systems where the active plan exposes the USB selective suspend setting.",
+            Risk = RiskLevel.Low,
         },
-        new ISettingPrimitive[] { new PowerSchemePrimitive(power, HighPerformanceSchemeGuid) },
+        new ISettingPrimitive[] { new PowerSettingPrimitive(power, UsbSubgroupGuid, UsbSelectiveSuspendGuid, 0, "USB selective suspend") },
         ctx =>
         {
             var c = new CompatibilityBuilder();
-            bool exists;
-            try { exists = power.ListSchemes().Any(s => s.Id == HighPerformanceSchemeGuid); }
-            catch (Exception e) when (e is not OutOfMemoryException) { exists = false; c.Unverified($"Power schemes could not be enumerated: {e.Message}"); }
-            if (!exists) c.Fail("The High performance power plan is not available on this system (common on Modern Standby devices).");
-            if (ctx.IsAmdX3D)
-                c.Warn("Ryzen X3D detected: AMD's 3D V-Cache core preference is reported to work with the Balanced plan. High performance may reduce gaming performance on dual-CCD models.");
-            if (ctx.IsHybridCpu == true)
-                c.Warn("Hybrid (P-core/E-core) CPU detected: Windows scheduling on these CPUs is tuned for the Balanced plan. Measure before keeping this change.");
+            try
+            {
+                if (power.ReadAcValue(power.GetActiveScheme(), UsbSubgroupGuid, UsbSelectiveSuspendGuid) is null)
+                    c.Fail("The active power plan does not expose the USB selective suspend setting.");
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                c.Unverified($"The power setting could not be read: {e.Message}");
+            }
             return c.Build();
         });
+
+    private static Optimization AccessibilityShortcuts(IAccessibilitySettings accessibility) => new(
+        new OptimizationDefinition
+        {
+            Id = Ids.AccessibilityShortcuts,
+            Name = "Turn off accessibility shortcut prompts",
+            Category = OptimizationCategory.InputUsb,
+            Kind = OptimizationKind.Actionable,
+            Description = "Prevents the Sticky Keys, Filter Keys and Toggle Keys prompts from opening when you press Shift five times or hold Shift or Num Lock during a game.",
+            TechnicalMechanism = "Clears the hotkey flag (SKF/FKF/TKF_HOTKEYACTIVE) of STICKYKEYS, FILTERKEYS and TOGGLEKEYS through SystemParametersInfo. The features themselves and all their other options are left as they are.",
+            ExpectedBenefit = "Stops a system prompt from taking focus away from a fullscreen game. This is about interruptions, not FPS or latency.",
+            Evidence = EvidenceLevel.Documented,
+            EvidenceNotes = "The flags and API are documented by Microsoft. People who rely on these accessibility shortcuts should keep them on; the features stay available in Settings > Accessibility > Keyboard.",
+            Sources = new[] { MsStickyKeys, MsAccessibilityParams },
+            Risks = new[] { "The keyboard shortcuts no longer turn these accessibility features on; use Settings > Accessibility > Keyboard instead." },
+            CompatibilitySummary = "All supported Windows versions. Per user. No restart.",
+            Risk = RiskLevel.Low,
+        },
+        new ISettingPrimitive[] { new AccessibilityShortcutsPrimitive(accessibility) });
+
+    private static Optimization Trim(IFileSystemBehavior fs) => new(
+        new OptimizationDefinition
+        {
+            Id = Ids.Trim,
+            Name = "Keep TRIM enabled for SSDs",
+            Category = OptimizationCategory.Storage,
+            Kind = OptimizationKind.Actionable,
+            Description = "Makes sure NTFS delete notifications (TRIM) are on, which is the Windows default. Useful if a tool or setting turned them off.",
+            TechnicalMechanism = "Uses the documented `fsutil behavior set disabledeletenotify NTFS 0` interface. TRIM tells the SSD which blocks were freed by file deletions so it can manage them internally.",
+            ExpectedBenefit = "Restores the default behavior that helps SSDs maintain write performance over time. If TRIM is already on, nothing changes.",
+            Evidence = EvidenceLevel.Documented,
+            EvidenceNotes = "Microsoft documents that TRIM is on by default for NTFS and that the change needs no restart. Microsoft also notes some devices may perform worse with delete notifications on; restore if you notice that. Drives that do not support TRIM simply ignore it.",
+            Sources = new[] { MsFsutilBehavior },
+            Risks = new[] { "Rare devices perform worse with delete notifications on (Microsoft's note)." },
+            CompatibilitySummary = "NTFS volumes. Administrator rights required. No restart.",
+            RequiresAdministrator = true,
+            Risk = RiskLevel.Low,
+        },
+        new ISettingPrimitive[] { new TrimPrimitive(fs) });
 
     private static Optimization Guidance(
         string id, string name, OptimizationCategory category, string description, string mechanism, string benefit,

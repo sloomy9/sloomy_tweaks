@@ -10,24 +10,31 @@ public sealed class Optimization
     public Optimization(
         OptimizationDefinition definition,
         IReadOnlyList<ISettingPrimitive> primitives,
-        Func<SystemContext, CompatibilityResult>? compatibility = null)
+        Func<SystemContext, CompatibilityResult>? compatibility = null,
+        SelectorBehavior? selector = null)
     {
         Definition = definition;
         Primitives = primitives;
+        Selector = selector;
         _compatibility = compatibility ?? (_ => CompatibilityResult.Compatible());
 
-        if (definition.Kind == OptimizationKind.Actionable && primitives.Count == 0)
-            throw new ArgumentException($"Actionable optimization '{definition.Id}' has no primitives.");
-        if (definition.Kind != OptimizationKind.Actionable && primitives.Count != 0)
+        if (definition.ChangesSystem && primitives.Count == 0)
+            throw new ArgumentException($"Optimization '{definition.Id}' changes the system but has no primitives.");
+        if (!definition.ChangesSystem && primitives.Count != 0)
             throw new ArgumentException($"Non-actionable optimization '{definition.Id}' must not have primitives.");
+        if ((definition.Kind == OptimizationKind.Selector) != (selector is not null))
+            throw new ArgumentException($"Optimization '{definition.Id}': selector behavior must be provided exactly for Selector items.");
     }
+
+    /// <summary>For <see cref="OptimizationKind.Selector"/> items: options, current value and per-value primitives.</summary>
+    public SelectorBehavior? Selector { get; }
 
     public OptimizationDefinition Definition { get; }
     public IReadOnlyList<ISettingPrimitive> Primitives { get; }
     public string Id => Definition.Id;
 
     public CompatibilityResult CheckCompatibility(SystemContext context) =>
-        Definition.Kind == OptimizationKind.Actionable
+        Definition.ChangesSystem
             ? _compatibility(context)
             : CompatibilityResult.Compatible();
 
@@ -49,3 +56,13 @@ public sealed class Optimization
         return anyUnknown ? OptimizationState.Unknown : OptimizationState.Enabled;
     }
 }
+
+/// <summary>
+/// Behavior of a multi-value setting. <see cref="Optimization.Primitives"/> holds one primitive used for
+/// reading and restoring the original; <see cref="PrimitivesFor"/> builds the primitives that set a value.
+/// </summary>
+public sealed record SelectorBehavior(
+    Func<IReadOnlyList<SelectorOption>> Options,
+    Func<IReadOnlyDictionary<string, SettingValue>, string?> CurrentValue,
+    Func<string, IReadOnlyList<ISettingPrimitive>> PrimitivesFor,
+    Func<SystemContext, string, CompatibilityResult>? CompatibilityFor = null);

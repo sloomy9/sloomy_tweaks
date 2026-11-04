@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    QA TOOL — NOT SHIPPED. Runs the real Sloomy Tweaks UI (MainWindow, pages, view models, Windows
+    services) for visual and runtime checks in environments without Windows CNG/NCrypt (e.g. Wine), by
+    verifying license-token signatures with a managed ECDSA implementation. It talks only to a local
+    development license server and is excluded from release builds and installers.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>SloomyTweaks.UiPreview</RootNamespace>
+    <AssemblyName>SloomyTweaks.UiPreview</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA1822;CA1305;CA2007;CA1031</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SloomyTweaks.App\SloomyTweaks.App.csproj" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+  </ItemGroup>
+</Project>

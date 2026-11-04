@@ -69,12 +69,14 @@ public partial class App : Application
             var registry = new WindowsRegistryAccess();
             var power = new WindowsPowerManagement();
             var mouse = new WindowsMouseSettings();
+            var accessibility = new WindowsAccessibilitySettings();
+            var fileSystem = new WindowsFileSystemBehavior();
             var privileges = new WindowsPrivilegeService();
             var hardware = new WindowsHardwareInfoProvider(power, privileges);
             var device = new WindowsDeviceIdentity();
 
             var engine = new OptimizationEngine(
-                OptimizationCatalog.Create(registry, power, mouse),
+                OptimizationCatalog.Create(registry, power, mouse, accessibility, fileSystem),
                 hardware.GetContext,
                 privileges,
                 backups: _store,
@@ -94,10 +96,12 @@ public partial class App : Application
                 new WindowsProcessServiceInfo(),
                 new WpfDialogService(),
                 new WpfAppActions(dataDir, logDir, privileges.IsElevated, ReleaseSingleInstance),
-                _log);
+                _log,
+                new WindowsSystemDiagnostics(power, fileSystem));
 
             var main = new MainViewModel(services, device.DeviceId);
             var window = new MainWindow { DataContext = main };
+            window.Closed += (_, _) => main.StopLicenseRecheck();
             MainWindow = window;
             if (e.Args.Contains("--minimized")) window.WindowState = WindowState.Minimized;
             window.Show();
@@ -116,17 +120,36 @@ public partial class App : Application
     private LicenseService CreateLicenseService(IDeviceIdentity device, string tokenPath)
     {
         string version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
-        LicensingConfig? config = LicensingConfig.TryLoad(Path.Combine(AppContext.BaseDirectory, "licensing.json"));
+        // Look next to the executable first (single-file publish), then in the app base directory.
+        string exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+        string path = Path.Combine(exeDir, "licensing.json");
+        if (!File.Exists(path)) path = Path.Combine(AppContext.BaseDirectory, "licensing.json");
+
+        LicensingConfiguration? config = LicensingConfiguration.Load(path, out string? problem);
         if (config is null)
         {
-            _log.Warn("license.not_configured", "licensing.json is missing or invalid; licensing is disabled in this build.");
-            return new LicenseService(null, new DpapiTokenStore(tokenPath), device, new Dictionary<string, ECDsa>(), new SystemClock(), _log, version);
+            _log.Warn("license.not_configured", problem ?? "Licensing is not configured.");
+            return new LicenseService(null, new DpapiTokenStore(tokenPath), device, new Dictionary<string, ECDsa>(), new SystemClock(), _log, version,
+                notConfiguredReason: problem);
         }
 
         var http = new HttpClient { BaseAddress = new Uri(config.ServerUrl!.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(15) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"SloomyTweaks/{version}");
-        var keys = LicensePublicKeys.FromPem(config.Keys.Select(k => (k.Kid, k.PublicKeyPem)));
-        return new LicenseService(new HttpLicenseApi(http), new DpapiTokenStore(tokenPath), device, keys, new SystemClock(), _log, version);
+        IReadOnlyDictionary<string, ECDsa> keys;
+        try
+        {
+            keys = LicensePublicKeys.FromPem(config.Keys.Select(k => (k.Kid, k.PublicKeyPem)));
+        }
+        catch (CryptographicException e)
+        {
+            // Never fail startup on key problems: show the activation screen with the reason instead.
+            _log.Error("license.key_load_failed", e.Message, e);
+            return new LicenseService(null, new DpapiTokenStore(tokenPath), device, new Dictionary<string, ECDsa>(), new SystemClock(), _log, version,
+                notConfiguredReason: $"The license verification key could not be loaded on this system ({e.Message}).");
+        }
+        if (config.IsDevelopment) _log.Warn("license.development_mode", $"Development licensing against {config.ServerUrl}.");
+        return new LicenseService(new HttpLicenseApi(http), new DpapiTokenStore(tokenPath), device, keys, new SystemClock(), _log, version,
+            developmentMode: config.IsDevelopment);
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

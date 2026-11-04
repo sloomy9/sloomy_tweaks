@@ -17,6 +17,28 @@ public interface IDialogService
     string? PickSaveFile(string title, string filter, string defaultFileName);
     void OpenUrl(string url);
     void OpenFolder(string path);
+    /// <summary>Opens a Windows Settings page (ms-settings: URI from <see cref="WindowsSettingsLinks"/>).</summary>
+    void OpenWindowsSettings(string uri);
+}
+
+/// <summary>Documented ms-settings: pages Sloomy Tweaks links to. Only these URIs are ever opened.</summary>
+public static class WindowsSettingsLinks
+{
+    public const string GameMode = "ms-settings:gaming-gamemode";
+    public const string Captures = "ms-settings:gaming-gamedvr";
+    public const string Graphics = "ms-settings:display-advancedgraphics";
+    public const string StartupApps = "ms-settings:startupapps";
+    public const string Power = "ms-settings:powersleep";
+    public const string Mouse = "ms-settings:mousetouchpad";
+    public const string Keyboard = "ms-settings:easeofaccess-keyboard";
+    public const string Storage = "ms-settings:storagesense";
+    public const string Network = "ms-settings:network-status";
+    public const string Display = "ms-settings:display";
+
+    public static readonly IReadOnlySet<string> Allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        GameMode, Captures, Graphics, StartupApps, Power, Mouse, Keyboard, Storage, Network, Display,
+    };
 }
 
 /// <summary>Application-level actions that depend on the host process.</summary>
@@ -45,4 +67,5 @@ public sealed record AppServices(
     IProcessServiceInfo Processes,
     IDialogService Dialogs,
     IAppActions App,
-    IAppLogger Log);
+    IAppLogger Log,
+    ISystemDiagnostics Diagnostics);

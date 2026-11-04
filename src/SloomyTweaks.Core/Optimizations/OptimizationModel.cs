@@ -47,7 +47,18 @@ public enum OptimizationKind
     Guidance,
     /// <summary>Listed only to explain why Sloomy Tweaks does not offer it.</summary>
     NotOffered,
+    /// <summary>A setting with more than two meaningful values; shown as a selector, backed up and restorable.</summary>
+    Selector,
 }
+
+public enum RiskLevel
+{
+    Low,
+    Medium,
+    High,
+}
+
+public sealed record SelectorOption(string Value, string Label);
 
 public enum OptimizationState
 {
@@ -74,6 +85,7 @@ public sealed record OptimizationDefinition
     public required IReadOnlyList<EvidenceSource> Sources { get; init; }
     public required IReadOnlyList<string> Risks { get; init; }
     public required string CompatibilitySummary { get; init; }
+    public RiskLevel Risk { get; init; } = RiskLevel.Low;
     public bool RequiresAdministrator { get; init; }
     public bool RequiresRestart { get; init; }
     /// <summary>Ids of optimizations that must not be enabled at the same time.</summary>
@@ -84,6 +96,9 @@ public sealed record OptimizationDefinition
     /// <summary>Only Verified or Documented actionable items may appear in the recommended flow.</summary>
     public bool EligibleForRecommendedFlow =>
         Kind == OptimizationKind.Actionable && Evidence is EvidenceLevel.Verified or EvidenceLevel.Documented;
+
+    /// <summary>Actionable and selector items change the system and support verified rollback.</summary>
+    public bool ChangesSystem => Kind is OptimizationKind.Actionable or OptimizationKind.Selector;
 }
 
 public enum CompatibilityStatus

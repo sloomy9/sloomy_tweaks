@@ -9,7 +9,11 @@ namespace SloomyTweaks.Presentation.ViewModels;
 
 public sealed record SourceViewModel(string Title, string Url, string KindText, ICommand OpenCommand);
 
-/// <summary>One optimization card. State always comes from reading the real configuration.</summary>
+/// <summary>
+/// One optimization card. The ON/OFF toggle reflects the configuration read back from Windows, never an
+/// intention: turning ON runs the full apply-and-verify workflow, turning OFF restores the saved original,
+/// and <see cref="IsOn"/> only changes after the engine has re-read the real state.
+/// </summary>
 public sealed class OptimizationCardViewModel : ObservableObject
 {
     private readonly AppServices _services;
@@ -19,6 +23,7 @@ public sealed class OptimizationCardViewModel : ObservableObject
     private bool _isExpanded;
     private string? _resultMessage;
     private bool _resultIsError;
+    private IReadOnlyList<SelectorOption> _options = Array.Empty<SelectorOption>();
 
     public OptimizationCardViewModel(OptimizationStatus status, AppServices services, Func<bool> hasPremium)
     {
@@ -28,11 +33,13 @@ public sealed class OptimizationCardViewModel : ObservableObject
         OptimizationDefinition d = status.Optimization.Definition;
         Sources = d.Sources.Select(s => new SourceViewModel(s.Title, s.Url, SourceKindText(s.Kind),
             new RelayCommand(() => services.Dialogs.OpenUrl(s.Url)))).ToList();
-        ApplyCommand = new AsyncRelayCommand(ApplyAsync, () => CanApply, ReportError);
-        RestoreCommand = new AsyncRelayCommand(RestoreAsync, () => CanRestore, ReportError);
+        ToggleCommand = new AsyncRelayCommand(ToggleAsync, () => CanToggle, ReportError);
+        RestoreOriginalCommand = new AsyncRelayCommand(RestoreAsync, () => CanRestoreOriginal, ReportError);
         ToggleDetailsCommand = new RelayCommand(() => IsExpanded = !IsExpanded);
+        LoadOptions();
     }
 
+    // ---------------------------------------------------------------- definition
     public OptimizationDefinition Definition => _status.Optimization.Definition;
     public string Id => Definition.Id;
     public string Name => Definition.Name;
@@ -46,54 +53,156 @@ public sealed class OptimizationCardViewModel : ObservableObject
         EvidenceLevel.Verified => "Verified",
         EvidenceLevel.Documented => "Documented",
         EvidenceLevel.Experimental => "Experimental",
-        _ => "Not Recommended",
+        _ => "Not recommended",
     };
+    public RiskLevel Risk => Definition.Risk;
+    public string RiskText => Definition.Risk switch { RiskLevel.Low => "Low risk", RiskLevel.Medium => "Medium risk", _ => "High risk" };
+    public string RestartText => Definition.RequiresRestart ? "Restart required" : "No restart";
+    public bool RequiresRestart => Definition.RequiresRestart;
+    public string AdministratorText => Definition.RequiresAdministrator ? "Administrator required" : "No admin needed";
+    public bool RequiresAdministrator => Definition.RequiresAdministrator;
     public IReadOnlyList<SourceViewModel> Sources { get; }
     public bool HasSources => Sources.Count > 0;
     public string CompatibilitySummary => Definition.CompatibilitySummary;
-    public IReadOnlyList<string> CompatibilityReasons => _status.Compatibility.Reasons;
-    public bool HasCompatibilityReasons => CompatibilityReasons.Count > 0;
     public IReadOnlyList<string> Risks => Definition.Risks;
     public bool HasRisks => Risks.Count > 0;
     public IReadOnlyList<string> ManualSteps => Definition.ManualSteps;
     public bool HasManualSteps => ManualSteps.Count > 0;
-    public string RestartRequiredText => Definition.Kind == OptimizationKind.Actionable ? (Definition.RequiresRestart ? "Yes" : "No") : "—";
-    public string AdministratorText => Definition.RequiresAdministrator ? "Required" : "Not required";
-    public bool IsActionable => Definition.Kind == OptimizationKind.Actionable;
+    public bool IsToggle => Definition.Kind == OptimizationKind.Actionable;
+    public bool IsSelector => Definition.Kind == OptimizationKind.Selector;
     public bool IsGuidance => Definition.Kind == OptimizationKind.Guidance;
-    public bool IsNotOffered => Definition.Kind == OptimizationKind.NotOffered;
     public bool InRecommendedFlow => Definition.EligibleForRecommendedFlow;
 
+    // ---------------------------------------------------------------- live state
+    public OptimizationStatus Status => _status;
     public OptimizationState State => _status.State;
-    public string StateText => Definition.Kind switch
-    {
-        OptimizationKind.Guidance => "Guidance",
-        OptimizationKind.NotOffered => "Not offered",
-        _ => _status.State switch
-        {
-            OptimizationState.Enabled => "Enabled",
-            OptimizationState.Disabled => "Disabled",
-            OptimizationState.Unsupported => "Unsupported",
-            OptimizationState.RestartPending => "Restart pending",
-            _ => _status.DetectionError is null ? "Unknown" : "Unknown (detection failed)",
-        },
-    };
-
     public bool HasBackup => _status.HasBackup;
+    public bool RestartPending => _status.RestartPending;
 
-    public bool CanApply => IsActionable && !IsBusy && _hasPremium()
-        && _status.State is OptimizationState.Disabled or OptimizationState.Unknown;
+    /// <summary>Not applicable on this system: the toggle shows a neutral "N/A" state.</summary>
+    public bool IsUnsupported => _status.Compatibility.Status == CompatibilityStatus.Unsupported;
 
-    /// <summary>Restore is always allowed, even without a license, so users can undo changes.</summary>
-    public bool CanRestore => IsActionable && !IsBusy && _status.HasBackup;
+    /// <summary>True only when Windows reports the optimized configuration (never for unsupported items).</summary>
+    public bool IsOn => IsToggle && !IsUnsupported && _status.ConfigState == OptimizationState.Enabled && _status.DetectionError is null;
 
-    public string? ApplyBlockedReason => !IsActionable ? null
-        : !_hasPremium() ? "Activate a license to apply optimizations."
-        : _status.State == OptimizationState.Unsupported ? "Not supported on this system."
-        : _status.State == OptimizationState.Enabled ? null
-        : _status.State == OptimizationState.RestartPending ? "Restart Windows to finish the previous change."
-        : null;
+    public string CompatibilityText => _status.Compatibility.Status switch
+    {
+        CompatibilityStatus.Compatible => "Compatible",
+        CompatibilityStatus.CompatibleWithWarnings => "Compatible with warnings",
+        CompatibilityStatus.Unverified => "Support unverified",
+        _ => "Not supported",
+    };
+    public bool IsCompatibilityOk => _status.Compatibility.Status == CompatibilityStatus.Compatible;
+    public IReadOnlyList<string> CompatibilityReasons => _status.Compatibility.Reasons;
+    public bool HasCompatibilityReasons => CompatibilityReasons.Count > 0;
 
+    public string StatusText
+    {
+        get
+        {
+            if (IsGuidance) return "Manual guide";
+            if (_status.DetectionError is not null) return "State could not be read";
+            if (_status.Compatibility.Status == CompatibilityStatus.Unsupported) return "Not supported on this PC";
+            string baseText = IsSelector
+                ? (SelectedOption?.Label ?? "Unknown")
+                : _status.ConfigState switch
+                {
+                    OptimizationState.Enabled => "On",
+                    OptimizationState.Disabled => "Off",
+                    _ => "Unknown (Windows default)",
+                };
+            return RestartPending ? baseText + " · Pending restart" : baseText;
+        }
+    }
+
+    public string? RestoreInfo => !_status.HasBackup
+        ? null // the blocked-reason line already explains the "already on" case
+        : IsSelector
+            ? $"Original value saved {_status.BackupCreatedAt?.LocalDateTime:g}. Use \"Restore original\" to put it back."
+            : $"Original value saved {_status.BackupCreatedAt?.LocalDateTime:g}. Turning this off restores it exactly.";
+
+    // ---------------------------------------------------------------- toggle
+    public bool CanToggle => ToggleBlockedReason is null && !IsBusy;
+
+    /// <summary>Why the toggle is disabled, or null when it can be used.</summary>
+    public string? ToggleBlockedReason
+    {
+        get
+        {
+            if (!IsToggle) return null;
+            if (_status.DetectionError is not null) return "The current state could not be read: " + _status.DetectionError;
+            if (_status.Compatibility.Status == CompatibilityStatus.Unsupported) return string.Join(" ", _status.Compatibility.Reasons);
+            if (Definition.RequiresAdministrator && !_services.App.IsElevated) return "Requires administrator rights. Use \"Restart as administrator\" in the title bar.";
+            if (IsOn && !_status.HasBackup) return "Already on before Sloomy Tweaks changed anything, so there is no original to restore. Change it in Windows Settings if you want it off.";
+            if (!IsOn && !_hasPremium()) return "An active license is required to apply optimizations.";
+            return null;
+        }
+    }
+
+    public AsyncRelayCommand ToggleCommand { get; }
+
+    internal async Task ToggleAsync()
+    {
+        if (IsOn) await RestoreAsync();
+        else await ApplyAsync();
+    }
+
+    internal async Task ApplyAsync()
+    {
+        OptimizationDefinition d = Definition;
+        bool needsConfirmation = _status.Compatibility.RequiresAcknowledgement || d.Evidence == EvidenceLevel.Experimental || d.RequiresRestart;
+        if (needsConfirmation && !await _services.Dialogs.ConfirmAsync($"Turn on: {d.Name}", Explain(_status.Optimization.Primitives, _status.Compatibility.Reasons), "Turn on"))
+            return;
+
+        await RunAsync(() => _services.Engine.ApplyAsync(Id, warningsAcknowledged: true));
+    }
+
+    internal async Task RestoreAsync() => await RunAsync(() => _services.Engine.RestoreAsync(Id));
+
+    // ---------------------------------------------------------------- selector
+    public IReadOnlyList<SelectorOption> Options { get => _options; private set => SetProperty(ref _options, value); }
+
+    public SelectorOption? SelectedOption
+    {
+        get => _options.FirstOrDefault(o => string.Equals(o.Value, _status.SelectedValue, StringComparison.OrdinalIgnoreCase));
+        set
+        {
+            if (value is null || string.Equals(value.Value, _status.SelectedValue, StringComparison.OrdinalIgnoreCase)) return;
+            _ = SelectAsync(value);
+        }
+    }
+
+    public bool CanSelect => IsSelector && !IsBusy && _status.Compatibility.Status != CompatibilityStatus.Unsupported && _hasPremium()
+        && _status.DetectionError is null && _options.Count > 0
+        && !(Definition.RequiresAdministrator && !_services.App.IsElevated);
+
+    public bool CanRestoreOriginal => IsSelector && !IsBusy && _status.HasBackup;
+    public AsyncRelayCommand RestoreOriginalCommand { get; }
+
+    internal async Task SelectAsync(SelectorOption option)
+    {
+        if (!CanSelect)
+        {
+            OnPropertyChanged(nameof(SelectedOption)); // revert the visual selection
+            return;
+        }
+        Optimization opt = _status.Optimization;
+        var context = _services.Hardware.GetContext();
+        var compat = opt.Selector!.CompatibilityFor?.Invoke(context, option.Value) ?? CompatibilityResult.Compatible();
+        bool confirm = compat.RequiresAcknowledgement || Definition.RequiresRestart;
+        if (confirm)
+        {
+            var primitives = opt.Selector.PrimitivesFor(option.Value);
+            if (!await _services.Dialogs.ConfirmAsync($"{Definition.Name}: {option.Label}", Explain(primitives, compat.Reasons), "Change"))
+            {
+                OnPropertyChanged(nameof(SelectedOption));
+                return;
+            }
+        }
+        await RunAsync(() => _services.Engine.SelectAsync(Id, option.Value, warningsAcknowledged: true));
+    }
+
+    // ---------------------------------------------------------------- shared
     public bool IsBusy
     {
         get => _isBusy;
@@ -103,58 +212,16 @@ public sealed class OptimizationCardViewModel : ObservableObject
     public bool IsExpanded { get => _isExpanded; set => SetProperty(ref _isExpanded, value); }
     public string? ResultMessage { get => _resultMessage; private set => SetProperty(ref _resultMessage, value); }
     public bool ResultIsError { get => _resultIsError; private set => SetProperty(ref _resultIsError, value); }
-
-    public AsyncRelayCommand ApplyCommand { get; }
-    public AsyncRelayCommand RestoreCommand { get; }
     public RelayCommand ToggleDetailsCommand { get; }
 
-    internal async Task ApplyAsync()
+    private async Task RunAsync(Func<Task<OperationResult>> operation)
     {
-        OptimizationDefinition d = Definition;
-        var explanation = new StringBuilder();
-        explanation.AppendLine(d.Description).AppendLine();
-        explanation.AppendLine("Changes:");
-        foreach (ISettingPrimitive p in _status.Optimization.Primitives) explanation.AppendLine("  • " + p.DesiredDescription);
-        explanation.AppendLine().AppendLine("Evidence: " + EvidenceText + ". " + d.ExpectedBenefit);
-        if (d.Risks.Count > 0)
-        {
-            explanation.AppendLine().AppendLine("Risks:");
-            foreach (string r in d.Risks) explanation.AppendLine("  • " + r);
-        }
-        if (_status.Compatibility.Reasons.Count > 0)
-        {
-            explanation.AppendLine().AppendLine("Compatibility notes:");
-            foreach (string r in _status.Compatibility.Reasons) explanation.AppendLine("  • " + r);
-        }
-        if (d.RequiresRestart) explanation.AppendLine().AppendLine("A restart is required for this change to take effect.");
-        explanation.AppendLine().Append("Your current settings are saved and can be restored from this card or the Restore Center.");
-
-        bool confirmed = await _services.Dialogs.ConfirmAsync($"Apply: {d.Name}", explanation.ToString(), "Apply");
-        if (!confirmed) return;
-
         IsBusy = true;
         try
         {
-            OperationResult result = await _services.Engine.ApplyAsync(Id, warningsAcknowledged: true);
-            ShowResult(result);
-        }
-        finally
-        {
-            await RefreshAsync();
-            IsBusy = false;
-        }
-    }
-
-    internal async Task RestoreAsync()
-    {
-        bool confirmed = await _services.Dialogs.ConfirmAsync($"Restore: {Definition.Name}",
-            "Sloomy Tweaks will restore the values that were in place before it changed this setting.", "Restore");
-        if (!confirmed) return;
-
-        IsBusy = true;
-        try
-        {
-            ShowResult(await _services.Engine.RestoreAsync(Id));
+            OperationResult result = await operation();
+            ResultIsError = !result.Success;
+            ResultMessage = result.ErrorDetail is null ? result.Message : $"{result.Message} ({result.ErrorDetail})";
         }
         finally
         {
@@ -166,28 +233,56 @@ public sealed class OptimizationCardViewModel : ObservableObject
     public async Task RefreshAsync()
     {
         _status = await Task.Run(() => _services.Engine.GetStatus(Id));
-        OnPropertyChanged(nameof(State));
-        OnPropertyChanged(nameof(StateText));
-        OnPropertyChanged(nameof(HasBackup));
-        OnPropertyChanged(nameof(CompatibilityReasons));
-        OnPropertyChanged(nameof(HasCompatibilityReasons));
-        OnPropertyChanged(nameof(ApplyBlockedReason));
+        LoadOptions();
+        foreach (string p in new[]
+                 {
+                     nameof(Status), nameof(State), nameof(IsOn), nameof(IsUnsupported), nameof(HasBackup), nameof(RestartPending), nameof(StatusText),
+                     nameof(CompatibilityText), nameof(IsCompatibilityOk), nameof(CompatibilityReasons), nameof(HasCompatibilityReasons),
+                     nameof(RestoreInfo), nameof(SelectedOption),
+                 })
+            OnPropertyChanged(p);
         RaiseCommandStates();
     }
 
     public void RaiseCommandStates()
     {
-        OnPropertyChanged(nameof(CanApply));
-        OnPropertyChanged(nameof(CanRestore));
-        OnPropertyChanged(nameof(ApplyBlockedReason));
-        ApplyCommand.RaiseCanExecuteChanged();
-        RestoreCommand.RaiseCanExecuteChanged();
+        OnPropertyChanged(nameof(CanToggle));
+        OnPropertyChanged(nameof(ToggleBlockedReason));
+        OnPropertyChanged(nameof(CanSelect));
+        OnPropertyChanged(nameof(CanRestoreOriginal));
+        ToggleCommand.RaiseCanExecuteChanged();
+        RestoreOriginalCommand.RaiseCanExecuteChanged();
     }
 
-    private void ShowResult(OperationResult result)
+    private void LoadOptions()
     {
-        ResultIsError = !result.Success;
-        ResultMessage = result.ErrorDetail is null ? result.Message : $"{result.Message} ({result.ErrorDetail})";
+        if (!IsSelector) return;
+        try { Options = _status.Optimization.Selector!.Options(); }
+        catch (Exception e) when (e is not OutOfMemoryException) { Options = Array.Empty<SelectorOption>(); ResultMessage = "Options could not be read: " + e.Message; ResultIsError = true; }
+        OnPropertyChanged(nameof(CanSelect));
+    }
+
+    private string Explain(IReadOnlyList<ISettingPrimitive> primitives, IReadOnlyList<string> compatibilityReasons)
+    {
+        OptimizationDefinition d = Definition;
+        var sb = new StringBuilder();
+        sb.AppendLine(d.Description).AppendLine();
+        sb.AppendLine("Changes:");
+        foreach (ISettingPrimitive p in primitives) sb.AppendLine("  • " + p.DesiredDescription);
+        sb.AppendLine().AppendLine("Evidence: " + EvidenceText + ". " + d.ExpectedBenefit);
+        if (d.Risks.Count > 0)
+        {
+            sb.AppendLine().AppendLine("Risks:");
+            foreach (string r in d.Risks) sb.AppendLine("  • " + r);
+        }
+        if (compatibilityReasons.Count > 0)
+        {
+            sb.AppendLine().AppendLine("Compatibility notes:");
+            foreach (string r in compatibilityReasons) sb.AppendLine("  • " + r);
+        }
+        if (d.RequiresRestart) sb.AppendLine().AppendLine("A restart is required for this change to take effect.");
+        sb.AppendLine().Append("Your current settings are saved first and can be restored at any time.");
+        return sb.ToString();
     }
 
     private void ReportError(Exception e)

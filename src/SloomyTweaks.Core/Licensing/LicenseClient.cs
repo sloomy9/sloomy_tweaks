@@ -131,8 +131,10 @@ public sealed class LicenseService
     private readonly string _appVersion;
 
     public LicenseService(ILicenseApi? api, ILicenseTokenStore store, IDeviceIdentity device,
-        IReadOnlyDictionary<string, ECDsa> publicKeys, IClock clock, IAppLogger log, string appVersion)
+        IReadOnlyDictionary<string, ECDsa> publicKeys, IClock clock, IAppLogger log, string appVersion,
+        bool developmentMode = false, string? notConfiguredReason = null)
     {
+        IsDevelopmentMode = developmentMode;
         _api = api;
         _store = store;
         _device = device;
@@ -142,8 +144,11 @@ public sealed class LicenseService
         _appVersion = appVersion;
         Current = IsConfigured
             ? new LicenseSnapshot(LicenseStatus.Unlicensed, "Enter your Sloomy Tweaks license key to activate.")
-            : new LicenseSnapshot(LicenseStatus.NotConfigured, "Licensing is not configured in this build (no license server or public key).");
+            : new LicenseSnapshot(LicenseStatus.NotConfigured, notConfiguredReason ?? "Licensing is not configured in this build (no license server or public key).");
     }
+
+    /// <summary>True when licensing.json declares environment "development" (e.g. a localhost test server).</summary>
+    public bool IsDevelopmentMode { get; }
 
     public event EventHandler<LicenseSnapshot>? Changed;
 

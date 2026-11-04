@@ -5,7 +5,7 @@
   #define SourceDir "..\artifacts\SloomyTweaks-win-x64"
 #endif
 #define AppName "Sloomy Tweaks"
-#define AppVersion "0.1.0"
+#define AppVersion "0.2.0"
 #define AppExe "SloomyTweaks.exe"
 
 [Setup]

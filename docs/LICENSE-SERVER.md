@@ -6,7 +6,27 @@
 - SQLite library: `libsqlite3` on Linux (`apt install libsqlite3-0`). On Windows the built-in `winsqlite3.dll` is used.
 - TLS. Use Kestrel with a certificate, or a reverse proxy (nginx, Caddy, IIS) that terminates HTTPS. Outside Development the server enables HSTS and HTTPS redirection.
 
-## First-time setup
+## Recommended: Docker + Caddy (automatic HTTPS)
+
+`deploy/license-server/` contains a Dockerfile, a docker-compose file (license server + Caddy) and a Caddyfile. Caddy obtains and renews a Let's Encrypt certificate for your domain; the license server listens only on the internal network and trusts Caddy's forwarded headers (`Sloomy__TrustForwardedHeaders=true`) so rate limits apply per client.
+
+```bash
+# On a Linux VPS with Docker, with DNS for licenses.<your-domain> pointing at it
+cd deploy/license-server
+cp .env.example .env          # set LICENSE_DOMAIN, Sloomy__AdminKeySha256, Sloomy__KeyPepper
+mkdir -p secrets
+docker compose run --rm -v "$PWD/secrets:/out" license generate-signing-key /out/signing-key.pem /out/public-key.pem
+docker compose run --rm license generate-admin-key       # store the key offline, put the hash in .env
+docker compose run --rm license generate-pepper          # put the value in .env
+docker compose up -d
+curl https://licenses.<your-domain>/health
+```
+
+Copy `secrets/public-key.pem` (never `signing-key.pem`) into the client's `licensing.json`. `.env` and `secrets/` are git-ignored; the database lives in the `license-data` Docker volume (back it up).
+
+> These deployment files were written but **not yet run** (no Docker in the build environment). Test them on the target host before going live.
+
+## Manual setup
 
 ```bash
 dotnet publish src/SloomyTweaks.LicenseServer -c Release -o /opt/sloomy-license

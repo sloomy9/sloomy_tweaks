@@ -10,3 +10,7 @@ src/SloomyTweaks.App/licensing.json
 **/data/*.db*
 *.pem
 !**/*.example.*
+
+# Deployment secrets
+deploy/license-server/.env
+deploy/license-server/secrets/

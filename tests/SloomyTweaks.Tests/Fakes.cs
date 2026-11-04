@@ -1,5 +1,7 @@
+using SloomyTweaks.Core.Diagnostics;
 using SloomyTweaks.Core.Hardware;
 using SloomyTweaks.Core.Licensing;
+using SloomyTweaks.Core.Optimizations;
 using SloomyTweaks.Core.Platform;
 using SloomyTweaks.Core.Processes;
 using SloomyTweaks.Presentation.Services;
@@ -45,6 +47,54 @@ public sealed class FakePower : IPowerManagement
     public Guid GetActiveScheme() => Active;
     public void SetActiveScheme(Guid scheme) => Active = scheme;
     public IReadOnlyList<PowerScheme> ListSchemes() => Schemes;
+
+    /// <summary>AC values keyed by scheme|subgroup|setting. Missing key = setting not present on this PC.</summary>
+    public Dictionary<string, uint> AcValues { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool FailWrites { get; set; }
+    public static string AcKey(Guid scheme, Guid sub, Guid setting) => $"{scheme}|{sub}|{setting}";
+    public uint? ReadAcValue(Guid scheme, Guid subgroup, Guid setting) =>
+        AcValues.TryGetValue(AcKey(scheme, subgroup, setting), out var v) ? v : null;
+    public void WriteAcValue(Guid scheme, Guid subgroup, Guid setting, uint value)
+    {
+        if (FailWrites) throw new UnauthorizedAccessException("PowerWriteACValueIndex denied (simulated).");
+        AcValues[AcKey(scheme, subgroup, setting)] = value;
+    }
+}
+
+public sealed class FakeAccessibility : IAccessibilitySettings
+{
+    // Windows defaults: SKF_HOTKEYACTIVE etc. set (510/126/62 are the stock flag values).
+    public AccessibilityFlags Value { get; set; } = new(510, 126, 62);
+    public bool FailWrites { get; set; }
+    public AccessibilityFlags Get() => Value;
+    public void Set(AccessibilityFlags flags)
+    {
+        if (FailWrites) throw new UnauthorizedAccessException("SPI denied (simulated).");
+        Value = flags;
+    }
+}
+
+public sealed class FakeFileSystem : IFileSystemBehavior
+{
+    public int? DisableDeleteNotify { get; set; } = 0;
+    public bool FailWrites { get; set; }
+    public int? QueryNtfsDisableDeleteNotify() => DisableDeleteNotify;
+    public void SetNtfsDisableDeleteNotify(int value)
+    {
+        if (FailWrites) throw new InvalidOperationException("fsutil failed (simulated).");
+        DisableDeleteNotify = value;
+    }
+}
+
+public sealed class FakeDiagnostics : ISystemDiagnostics
+{
+    public IReadOnlyList<DiagnosticRow> ProcessorPowerPolicy() => new[] { new DiagnosticRow("Minimum processor state", "5%") };
+    public IReadOnlyList<DiagnosticRow> Memory() => new[] { new DiagnosticRow("Page file", "System managed") };
+    public IReadOnlyList<DisplayInfo> Displays() => new[] { new DisplayInfo("\\\\.\\DISPLAY1", 1920, 1080, 144) };
+    public int? PointerSpeed() => 10;
+    public string? FortniteIni { get; set; }
+    public string? ReadFortniteSettings() => FortniteIni;
+    public DiagnosticRow TrimStatus() => new("TRIM", "Enabled");
 }
 
 public sealed class FakeMouse : IMouseSettings
@@ -145,6 +195,8 @@ public sealed class FakeDialogs : IDialogService
     public string? PickSaveFile(string title, string filter, string defaultFileName) => null;
     public void OpenUrl(string url) { }
     public void OpenFolder(string path) { }
+    public List<string> OpenedSettings { get; } = new();
+    public void OpenWindowsSettings(string uri) => OpenedSettings.Add(uri);
 }
 
 public sealed class FakeAppActions : IAppActions
@@ -164,4 +216,11 @@ public sealed class FakeDevice : IDeviceIdentity
     public FakeDevice(string id = "0123456789abcdef0123456789abcdef", string name = "TEST-PC") { DeviceId = id; DeviceName = name; }
     public string DeviceId { get; }
     public string DeviceName { get; }
+}
+
+public static class TestCatalog
+{
+    public static IReadOnlyList<Optimization> Create(IRegistryAccess registry, IPowerManagement power, IMouseSettings mouse,
+        IAccessibilitySettings? accessibility = null, IFileSystemBehavior? fileSystem = null) =>
+        OptimizationCatalog.Create(registry, power, mouse, accessibility ?? new FakeAccessibility(), fileSystem ?? new FakeFileSystem());
 }

@@ -128,3 +128,27 @@ public sealed class JoinLinesConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+
+public sealed class RiskToBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value switch
+    {
+        RiskLevel.Low => EvidenceToBrushConverter.Res("Success"),
+        RiskLevel.Medium => EvidenceToBrushConverter.Res("Warning"),
+        _ => EvidenceToBrushConverter.Res("Danger"),
+    };
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+public sealed class SeverityToBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value switch
+    {
+        SloomyTweaks.Core.Diagnostics.DiagnosticSeverity.Good => EvidenceToBrushConverter.Res("Success"),
+        SloomyTweaks.Core.Diagnostics.DiagnosticSeverity.Warning => EvidenceToBrushConverter.Res("Warning"),
+        _ => EvidenceToBrushConverter.Res("Text.Primary"),
+    };
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}

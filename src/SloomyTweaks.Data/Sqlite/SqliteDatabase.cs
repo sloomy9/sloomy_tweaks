@@ -217,17 +217,18 @@ public sealed class SqliteDatabase : IDisposable
     private static IntPtr Resolve(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (libraryName != Native.Library) return IntPtr.Zero;
-        string[] candidates = OperatingSystem.IsWindows()
-            ? new[] { "winsqlite3.dll" }                 // ships with Windows 10/11 in System32
+        // Windows: prefer the SQLite engine that ships with Windows 10/11 (System32\winsqlite3.dll), then the
+        // e_sqlite3.dll bundled with the app. Linux/macOS: the system library (license server, CI).
+        (string Name, DllImportSearchPath? Path)[] candidates = OperatingSystem.IsWindows()
+            ? new (string, DllImportSearchPath?)[] { ("winsqlite3.dll", DllImportSearchPath.System32), ("e_sqlite3", null) }
             : OperatingSystem.IsMacOS()
-                ? new[] { "libsqlite3.dylib" }
-                : new[] { "libsqlite3.so.0", "libsqlite3.so" };
-        foreach (string candidate in candidates)
+                ? new (string, DllImportSearchPath?)[] { ("libsqlite3.dylib", null), ("e_sqlite3", null) }
+                : new (string, DllImportSearchPath?)[] { ("libsqlite3.so.0", null), ("libsqlite3.so", null), ("e_sqlite3", null) };
+        foreach (var (name, path) in candidates)
         {
-            if (NativeLibrary.TryLoad(candidate, assembly, DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories, out IntPtr handle))
-                return handle;
+            if (NativeLibrary.TryLoad(name, assembly, path, out IntPtr handle)) return handle;
         }
-        throw new DllNotFoundException("SQLite engine not found. Tried: " + string.Join(", ", candidates));
+        throw new DllNotFoundException("SQLite engine not found. Tried: " + string.Join(", ", candidates.Select(c => c.Name)));
     }
 }
 

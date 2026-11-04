@@ -1,0 +1,4 @@
+{$LICENSE_DOMAIN} {
+	encode gzip
+	reverse_proxy license:8080
+}

@@ -7,6 +7,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Controls.WindowCorners.Apply(this);
         StateChanged += (_, _) =>
         {
             MaxButton.Content = WindowState == WindowState.Maximized ? "" : "";

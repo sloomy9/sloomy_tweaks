@@ -28,6 +28,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Fallback SQLite engine (e_sqlite3.dll) for systems where Windows' built-in winsqlite3.dll is unavailable. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.14" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Resource Include="Assets\SloomyTweaks.png" />
     <None Update="licensing.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('licensing.json')" />
   </ItemGroup>

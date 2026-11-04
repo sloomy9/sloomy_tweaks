@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
-using System.Text.Json;
 using System.Windows;
 using SloomyTweaks.App.Views;
 using SloomyTweaks.Platform.Windows;
@@ -41,6 +40,13 @@ public sealed class WpfDialogService : IDialogService
         // Only web links from the evidence registry are opened; anything else is ignored.
         if (Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
             Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+    }
+
+    public void OpenWindowsSettings(string uri)
+    {
+        // Only the documented ms-settings: pages listed in WindowsSettingsLinks can be opened.
+        if (WindowsSettingsLinks.Allowed.Contains(uri))
+            Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
     }
 
     public void OpenFolder(string path)
@@ -92,38 +98,5 @@ public sealed class WpfAppActions : IAppActions
     {
         string? exe = Environment.ProcessPath;
         if (exe is not null) _startup.SetEnabled(enabled, exe);
-    }
-}
-
-/// <summary>
-/// Licensing configuration shipped next to the executable (licensing.json). Contains only the
-/// license server URL and public verification keys — never a secret. Treated as untrusted input.
-/// </summary>
-public sealed class LicensingConfig
-{
-    public string? ServerUrl { get; set; }
-    public List<PublicKeyEntry> Keys { get; set; } = new();
-
-    public sealed class PublicKeyEntry
-    {
-        public string Kid { get; set; } = string.Empty;
-        public string PublicKeyPem { get; set; } = string.Empty;
-    }
-
-    public static LicensingConfig? TryLoad(string path)
-    {
-        if (!File.Exists(path)) return null;
-        try
-        {
-            var cfg = JsonSerializer.Deserialize<LicensingConfig>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (cfg?.ServerUrl is null || !Uri.TryCreate(cfg.ServerUrl, UriKind.Absolute, out Uri? uri)) return null;
-            if (uri.Scheme != Uri.UriSchemeHttps && !uri.IsLoopback) return null;
-            if (cfg.Keys.Count == 0 || cfg.Keys.Any(k => string.IsNullOrWhiteSpace(k.Kid) || !k.PublicKeyPem.Contains("PUBLIC KEY", StringComparison.Ordinal))) return null;
-            return cfg;
-        }
-        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
     }
 }

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:SloomyTweaks.Presentation.ViewModels;assembly=SloomyTweaks.Presentation"
         Title="Sloomy Tweaks"
-        Width="1320" Height="860" MinWidth="1060" MinHeight="680"
+        Width="1360" Height="880" MinWidth="1080" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource Bg.Primary}"
         Foreground="{StaticResource Text.Primary}"
@@ -12,9 +12,9 @@
         UseLayoutRounding="True"
         Icon="Assets/SloomyTweaks.png">
 
-    <!-- Custom title bar: WindowChrome keeps native snapping, resizing and the Windows 11 shadow and rounded corners. -->
+    <!-- Custom chrome keeps native snapping, resizing and the shadow; Windows 11 rounds the corners (see WindowCorners). -->
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="40" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False" />
+        <WindowChrome CaptionHeight="44" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="14" UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
 
     <Border x:Name="RootBorder">
@@ -31,25 +31,44 @@
 
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="40" />
+                <RowDefinition Height="44" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="248" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <!-- ===== Title bar ===== -->
-            <Border Grid.ColumnSpan="2" Background="{StaticResource Bg.Secondary}" BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1">
+            <Border Grid.ColumnSpan="2" Background="{StaticResource Bg.Sidebar}" BorderBrush="{StaticResource Border.Subtle}" BorderThickness="0,0,0,1">
                 <Grid>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0">
                         <Image Source="Assets/SloomyTweaks.png" Width="18" Height="18" RenderOptions.BitmapScalingMode="HighQuality" />
                         <TextBlock Text="{Binding ProductName}" FontWeight="SemiBold" FontSize="13" Margin="10,0,0,0" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding Version}" FontSize="11" Foreground="{StaticResource Text.Secondary}" Margin="8,1,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Version}" FontSize="11" Foreground="{StaticResource Text.Tertiary}" Margin="8,1,0,0" VerticalAlignment="Center" />
+                        <Border Style="{StaticResource Badge}" Background="{StaticResource Warning.Subtle}" BorderBrush="#66F59E0B" Margin="12,0,0,0"
+                                Visibility="{Binding DevelopmentBadge, Converter={StaticResource HasValueToVis}}"
+                                ToolTip="licensing.json declares a development license server. This build must not be distributed to customers.">
+                            <TextBlock Text="{Binding DevelopmentBadge}" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource Warning}" />
+                        </Border>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Border Style="{StaticResource Badge}" BorderBrush="{StaticResource Border}" Margin="0,0,8,0">
-                            <TextBlock Text="{Binding LicenseBadge}" FontSize="11" Foreground="{StaticResource Text.Secondary}" />
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="6" Height="6" Margin="0,0,6,0" VerticalAlignment="Center">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource Warning}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsUnlocked}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource Success}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <TextBlock Text="{Binding LicenseBadge}" FontSize="11" Foreground="{StaticResource Text.Secondary}" />
+                            </StackPanel>
                         </Border>
                         <Border Style="{StaticResource Badge}" BorderBrush="{StaticResource Border}" Margin="0,0,8,0">
                             <TextBlock Text="{Binding ElevationText}" FontSize="11" Foreground="{StaticResource Text.Secondary}" />
@@ -65,51 +84,58 @@
                 </Grid>
             </Border>
 
-            <!-- ===== Sidebar ===== -->
-            <Border Grid.Row="1" Background="{StaticResource Bg.Secondary}" BorderBrush="{StaticResource Border}" BorderThickness="0,0,1,0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding NavItems}" Margin="10,12,10,12">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type vm:NavItemViewModel}">
-                                <Button Style="{StaticResource NavButton}"
-                                        Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                        CommandParameter="{Binding}" AutomationProperties.Name="{Binding Title}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding Glyph}" Style="{StaticResource Text.Icon}" FontSize="15" Width="22" />
-                                        <TextBlock Text="{Binding Title}" FontSize="13" Margin="10,0,0,0" VerticalAlignment="Center" />
-                                        <TextBlock Text="&#xE72E;" Style="{StaticResource Text.Icon}" FontSize="10" Margin="8,0,0,0" Opacity="0.6"
-                                                   Visibility="{Binding RequiresLicense, Converter={StaticResource BoolToVis}}" ToolTip="Requires a license" />
-                                    </StackPanel>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+            <!-- ===== Sidebar (only with a valid license) ===== -->
+            <Border Grid.Row="1" Width="252" Background="{StaticResource Bg.Sidebar}" BorderBrush="{StaticResource Border.Subtle}" BorderThickness="0,0,1,0"
+                    Visibility="{Binding IsUnlocked, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,20,20,16">
+                        <Border Width="36" Height="36" CornerRadius="10" Background="{StaticResource Accent.Subtle}" BorderBrush="{StaticResource Accent.Border}" BorderThickness="1">
+                            <Image Source="Assets/SloomyTweaks.png" Width="22" Height="22" RenderOptions.BitmapScalingMode="HighQuality" />
+                        </Border>
+                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Sloomy Tweaks" FontWeight="SemiBold" FontSize="14" />
+                            <TextBlock Text="Gaming optimization" FontSize="11" Foreground="{StaticResource Text.Tertiary}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Border DockPanel.Dock="Bottom" Style="{StaticResource Card.Inner}" Margin="14,8,14,16">
+                        <StackPanel>
+                            <TextBlock Text="LICENSE" Style="{StaticResource Text.Label}" />
+                            <TextBlock Text="{Binding LicenseBadge}" FontSize="12" Foreground="{StaticResource Text.Primary}" />
+                        </StackPanel>
+                    </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding NavItems}" Margin="12,4,12,4">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:NavItemViewModel}">
+                                    <Button Style="{StaticResource NavButton}"
+                                            Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}" AutomationProperties.Name="{Binding Title}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Glyph}" Style="{StaticResource Text.Icon}" FontSize="15" Width="22" />
+                                            <TextBlock Text="{Binding Title}" FontSize="13" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
             </Border>
 
-            <!-- ===== Content ===== -->
-            <ContentControl Grid.Row="1" Grid.Column="1" Content="{Binding CurrentPage}" Focusable="False" />
+            <!-- ===== Content (only with a valid license) ===== -->
+            <ContentControl Grid.Row="1" Grid.Column="1" Content="{Binding CurrentPage}" Focusable="False"
+                            Visibility="{Binding IsUnlocked, Converter={StaticResource BoolToVis}}" />
 
-            <!-- ===== First-run activation overlay ===== -->
-            <Grid Grid.RowSpan="2" Grid.ColumnSpan="2" Background="#D90B0B10"
-                  Visibility="{Binding ShowActivation, Converter={StaticResource BoolToVis}}">
-                <Border Style="{StaticResource Card}" Width="500" Padding="36" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <StackPanel>
-                        <Image Source="Assets/SloomyTweaks.png" Width="48" Height="48" HorizontalAlignment="Left" />
-                        <TextBlock Text="Activate Sloomy Tweaks" Style="{StaticResource Text.PageTitle}" FontSize="22" Margin="0,18,0,6" />
-                        <TextBlock Text="Enter the license key from your purchase confirmation." Style="{StaticResource Text.Muted}" />
-                        <TextBlock Text="LICENSE KEY" Style="{StaticResource Text.Label}" Margin="0,20,0,4" />
-                        <TextBox Text="{Binding ActivationKey, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource MonoFont}" FontSize="14" />
-                        <TextBlock Text="{Binding ActivationMessage}" Style="{StaticResource Text.Muted}" Margin="0,10,0,0"
-                                   Visibility="{Binding ActivationMessage, Converter={StaticResource HasValueToVis}}" />
-                        <Button Content="Activate" Style="{StaticResource Button.Primary}" Command="{Binding ActivateCommand}" Margin="0,18,0,0" Padding="16,10" />
-                        <Button Content="Continue with limited access" Style="{StaticResource Button.Link}" Command="{Binding SkipActivationCommand}"
-                                HorizontalAlignment="Center" Margin="0,14,0,0" />
-                        <TextBlock Text="Without a license you can view your system, browse the evidence registry and restore any change Sloomy Tweaks made."
-                                   Style="{StaticResource Text.Muted}" FontSize="12" TextAlignment="Center" Margin="0,6,0,0" />
-                    </StackPanel>
-                </Border>
-            </Grid>
+            <!-- ===== Activation screen: the whole window when there is no valid license ===== -->
+            <ContentControl Grid.Row="1" Grid.ColumnSpan="2" Content="{Binding Activation}" Focusable="False"
+                            Visibility="{Binding IsLocked, Converter={StaticResource BoolToVis}}" />
+
+            <!-- ===== Startup ===== -->
+            <StackPanel Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Visibility="{Binding IsStarting, Converter={StaticResource BoolToVis}}">
+                <Image Source="Assets/SloomyTweaks.png" Width="48" Height="48" RenderOptions.BitmapScalingMode="HighQuality" />
+                <TextBlock Text="Checking license…" Style="{StaticResource Text.Muted}" Margin="0,14,0,0" HorizontalAlignment="Center" />
+            </StackPanel>
         </Grid>
     </Border>
 </Window>

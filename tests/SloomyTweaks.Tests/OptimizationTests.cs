@@ -91,7 +91,7 @@ public class SettingPrimitiveTests
 
 public class CatalogTests
 {
-    private static IReadOnlyList<Optimization> Catalog() => OptimizationCatalog.Create(new FakeRegistry(), new FakePower(), new FakeMouse());
+    private static IReadOnlyList<Optimization> Catalog() => TestCatalog.Create(new FakeRegistry(), new FakePower(), new FakeMouse());
 
     [Fact]
     public void Every_actionable_or_guidance_item_cites_at_least_one_https_source()
@@ -123,7 +123,8 @@ public class CatalogTests
             Assert.Equal(OptimizationKind.Actionable, o.Definition.Kind);
             Assert.True(o.Definition.Evidence is EvidenceLevel.Verified or EvidenceLevel.Documented, o.Id);
         }
-        Assert.False(Catalog().Single(o => o.Id == Ids.HighPerformancePlan).Definition.EligibleForRecommendedFlow);
+        Assert.False(Catalog().Single(o => o.Id == Ids.PowerPlan).Definition.EligibleForRecommendedFlow);
+        Assert.False(Catalog().Single(o => o.Id == Ids.UsbSelectiveSuspend).Definition.EligibleForRecommendedFlow);
     }
 
     [Fact]
@@ -154,7 +155,7 @@ public class CatalogTests
 public class CompatibilityTests
 {
     private readonly FakePower _power = new();
-    private IReadOnlyList<Optimization> Catalog() => OptimizationCatalog.Create(new FakeRegistry(), _power, new FakeMouse());
+    private IReadOnlyList<Optimization> Catalog() => TestCatalog.Create(new FakeRegistry(), _power, new FakeMouse());
     private Optimization Get(string id) => Catalog().Single(o => o.Id == id);
 
     [Fact]
@@ -179,18 +180,36 @@ public class CompatibilityTests
         Assert.Equal(CompatibilityStatus.Compatible, Get(Ids.WindowedGameOptimizations).CheckCompatibility(TestSystems.Win11(build: 22631)).Status);
     }
 
+    private CompatibilityResult PlanCompat(string value, SystemContext ctx) =>
+        Get(Ids.PowerPlan).Selector!.CompatibilityFor!(ctx, value);
+
     [Fact]
-    public void High_performance_plan_warns_on_x3d_and_hybrid_and_fails_when_plan_missing()
+    public void Power_plan_selector_lists_only_existing_plans_and_warns_on_x3d_and_hybrid()
     {
-        var x3d = Get(Ids.HighPerformancePlan).CheckCompatibility(TestSystems.Win11());
+        var options = Get(Ids.PowerPlan).Selector!.Options();
+        Assert.Equal(2, options.Count);
+        string high = OptimizationCatalog.HighPerformanceSchemeGuid.ToString("D");
+        string balanced = OptimizationCatalog.BalancedSchemeGuid.ToString("D");
+
+        var x3d = PlanCompat(high, TestSystems.Win11());
         Assert.Equal(CompatibilityStatus.CompatibleWithWarnings, x3d.Status);
         Assert.Contains("X3D", string.Join(" ", x3d.Reasons));
 
-        var intel = Get(Ids.HighPerformancePlan).CheckCompatibility(TestSystems.Win11(cpu: "Intel(R) Core(TM) i7-14700K", vendor: CpuVendor.Intel, hybrid: true));
+        var intel = PlanCompat(high, TestSystems.Win11(cpu: "Intel(R) Core(TM) i7-14700K", vendor: CpuVendor.Intel, hybrid: true));
         Assert.Contains("Hybrid", string.Join(" ", intel.Reasons));
 
+        Assert.Equal(CompatibilityStatus.Compatible, PlanCompat(balanced, TestSystems.Win11()).Status);
+
         _power.Schemes.RemoveAll(s => s.Id == OptimizationCatalog.HighPerformanceSchemeGuid);
-        Assert.Equal(CompatibilityStatus.Unsupported, Get(Ids.HighPerformancePlan).CheckCompatibility(TestSystems.Win11()).Status);
+        Assert.Equal(1, Get(Ids.PowerPlan).Selector!.Options().Count);
+    }
+
+    [Fact]
+    public void Usb_selective_suspend_is_unsupported_when_the_plan_does_not_expose_it()
+    {
+        Assert.Equal(CompatibilityStatus.Unsupported, Get(Ids.UsbSelectiveSuspend).CheckCompatibility(TestSystems.Win11()).Status);
+        _power.AcValues[FakePower.AcKey(_power.Active, OptimizationCatalog.UsbSubgroupGuid, OptimizationCatalog.UsbSelectiveSuspendGuid)] = 1;
+        Assert.Equal(CompatibilityStatus.Compatible, Get(Ids.UsbSelectiveSuspend).CheckCompatibility(TestSystems.Win11()).Status);
     }
 
     [Fact]
@@ -215,7 +234,7 @@ public class OptimizationEngineTests
     private SystemContext _context = TestSystems.Win11();
 
     private OptimizationEngine Engine(IEnumerable<Optimization>? catalog = null) => new(
-        catalog ?? OptimizationCatalog.Create(_registry, _power, _mouse), () => _context, _privileges, _backups, _history, _clock, NullLogger.Instance, _restorePoints);
+        catalog ?? TestCatalog.Create(_registry, _power, _mouse), () => _context, _privileges, _backups, _history, _clock, NullLogger.Instance, _restorePoints);
 
     [Fact]
     public async Task Apply_saves_original_verifies_and_records_history()

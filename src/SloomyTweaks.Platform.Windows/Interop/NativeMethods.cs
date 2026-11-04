@@ -20,6 +20,12 @@ internal static unsafe class NativeMethods
     public static extern uint PowerReadFriendlyName(IntPtr rootPowerKey, in Guid schemeGuid, IntPtr subGroupGuid,
         IntPtr powerSettingGuid, byte* buffer, ref uint bufferSize);
 
+    [DllImport("powrprof.dll")]
+    public static extern uint PowerReadACValueIndex(IntPtr rootPowerKey, in Guid schemeGuid, in Guid subGroupGuid, in Guid settingGuid, out uint acValueIndex);
+
+    [DllImport("powrprof.dll")]
+    public static extern uint PowerWriteACValueIndex(IntPtr rootPowerKey, in Guid schemeGuid, in Guid subGroupGuid, in Guid settingGuid, uint acValueIndex);
+
     public const uint ACCESS_SCHEME = 16;
     public const uint ERROR_SUCCESS = 0;
     public const uint ERROR_NO_MORE_ITEMS = 259;
@@ -31,12 +37,83 @@ internal static unsafe class NativeMethods
     // ---- winuser.h (user32.dll) ----
     public const uint SPI_GETMOUSE = 0x0003;
     public const uint SPI_SETMOUSE = 0x0004;
+    public const uint SPI_GETFILTERKEYS = 0x0032;
+    public const uint SPI_SETFILTERKEYS = 0x0033;
+    public const uint SPI_GETTOGGLEKEYS = 0x0034;
+    public const uint SPI_SETTOGGLEKEYS = 0x0035;
+    public const uint SPI_GETSTICKYKEYS = 0x003A;
+    public const uint SPI_SETSTICKYKEYS = 0x003B;
+    public const uint SPI_GETMOUSESPEED = 0x0070;
     public const uint SPIF_UPDATEINIFILE = 0x01;
     public const uint SPIF_SENDCHANGE = 0x02;
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SystemParametersInfoW(uint action, uint uiParam, int* pvParam, uint winIni);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SystemParametersInfoW(uint action, uint uiParam, void* pvParam, uint winIni);
+
+    /// <summary>STICKYKEYS and TOGGLEKEYS share this layout.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FLAGSONLY
+    {
+        public uint cbSize;
+        public uint dwFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FILTERKEYS
+    {
+        public uint cbSize;
+        public uint dwFlags;
+        public uint iWaitMSec;
+        public uint iDelayMSec;
+        public uint iRepeatMSec;
+        public uint iBounceMSec;
+    }
+
+    public const int ENUM_CURRENT_SETTINGS = -1;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct DEVMODEW
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+        public ushort dmSpecVersion;
+        public ushort dmDriverVersion;
+        public ushort dmSize;
+        public ushort dmDriverExtra;
+        public uint dmFields;
+        public int dmPositionX;
+        public int dmPositionY;
+        public uint dmDisplayOrientation;
+        public uint dmDisplayFixedOutput;
+        public short dmColor;
+        public short dmDuplex;
+        public short dmYResolution;
+        public short dmTTOption;
+        public short dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+        public ushort dmLogPixels;
+        public uint dmBitsPerPel;
+        public uint dmPelsWidth;
+        public uint dmPelsHeight;
+        public uint dmDisplayFlags;
+        public uint dmDisplayFrequency;
+        public uint dmICMMethod;
+        public uint dmICMIntent;
+        public uint dmMediaType;
+        public uint dmDitherType;
+        public uint dmReserved1;
+        public uint dmReserved2;
+        public uint dmPanningWidth;
+        public uint dmPanningHeight;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumDisplaySettingsW(string deviceName, int modeNum, ref DEVMODEW devMode);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct DISPLAY_DEVICEW
